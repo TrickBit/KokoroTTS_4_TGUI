@@ -1,8 +1,8 @@
 import pathlib
 import html
 import time
-from extensions.KokoroTtsTexGernerationWebui.src.generate import run, load_voice, set_plitting_type
-from extensions.KokoroTtsTexGernerationWebui.src.voices import VOICES
+from extensions.KokoroTTS_4_TGUI.src.generate import run, load_voice, set_plitting_type
+from extensions.KokoroTTS_4_TGUI.src.voices import VOICES
 import gradio as gr
 import time
 
