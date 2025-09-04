@@ -309,6 +309,7 @@ def output_standard(original_string, clean_text):
 
         # Create hidden audio HTML - this should go to the hidden div
         audio_html = makehtml.create_ai_audio_html(file_url, speed, clean_text[:50])
+        log(f"Generated audio HTML: {audio_html[:200]}...")  # Show first 200 chars
 
         # Store the audio HTML globally so the button can access it
         setattr(shared, 'kokoro_current_audio_html', audio_html)
@@ -382,14 +383,21 @@ def ui():
             hidden_audio_div = gr.HTML(
                     value="Player Audio Code Goes Here",
                     elem_id="kokoro-hidden-audio",
-                    visible=True #default_enable_tts
+                    visible=False #default_enable_tts
                 )
+            # audio_control_btn = gr.Button(
+            #     "Speak",
+            #     elem_id="kokoro-audio-control",
+            #     elem_classes="custom-button",
+            #     variant="primary",
+            #     visible=False , #default_enable_tts,
+            #     interactive=False  # Start disabled when no audio
+            # )
             audio_control_btn = gr.Button(
                 "Speak",
                 elem_id="kokoro-audio-control",
-                elem_classes="custom-button",
-                variant="primary",
-                visible=True #False  #default_enable_tts
+                visible=True,  # Keep visible for cloning
+                elem_classes=["lg", "primary", "svelte-cmf5ev", "kokoro-hidden-original"]  # Add CSS class
             )
 
 
@@ -521,7 +529,7 @@ def ui():
             log("Warning: shared.gradio['display'] not available for chaining")
 
 
-        hidden_audio_div.value = makehtml.create_ai_audio_html("", default_speed, preview_text)
+        # hidden_audio_div.value = makehtml.create_ai_audio_html("", default_speed, preview_text)
 
 
 def custom_js():
@@ -529,4 +537,4 @@ def custom_js():
     Returns custom javascript as a string. It is applied whenever the web UI is loaded.
     This manages audio playback toggle, button cloning, synced state, tooltips, etc.
     """
-    return makehtml.create_hidden_audio_js()
+    return makehtml.create_ai_audio_js()

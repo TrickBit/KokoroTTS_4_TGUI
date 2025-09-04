@@ -5,62 +5,324 @@ from modules import shared
 from extensions.KokoroTTS_4_TGUI.src.debug import *
 
 
-#return f'<audio controls><source src="file/{audio_url}" type="audio/mpeg"></audio>'
+# These next two function mad it easier to jest pairs without modifying script.py
 def create_ai_audio_html(url, speed, text):
     # return make_standard_autoplay(url,speed, text)
     # return create_speaker_button_html(url,speed, text)
-    # return create_create_hidden_audio_html(url,speed, text)
-    return create_pure_js_audioplayr(url, speed, text)
+    return create_hidden_audio_html(url,speed, text)
+    # return create_pure_audioplayr_js(url, speed, text)
 
-# copied here from acript.py for reference:
-#
-# audio_control_btn = gr.Button(
-#                 "Speak",
-#                 elem_id="kokoro-audio-control",
-#                 elem_classes="custom-button",
-#                 variant="primary",
-#                 visible=True #False  #default_enable_tts
-#             )
+def create_ai_audio_js():
+    return create_hidden_audio_js()
 
 
-def create_pure_js_audioplayr(url, speed, text):
+
+
+def create_hidden_audio_html(url, speed, text):
+    """Complete self-contained audio component - all logic inline"""
+    abbrev = "chah"
+    timestamp = int(time.time() * 1000)
+    ts_url = f"{url}?t={timestamp}"
+
     result = f"""
-    <div id="kokoro-hidden-audio">
-        <button id="kokoro-audio-control" style="display: block;" >Load Audio</button>
-        <p id="kokoro-original-text" style="display: block;">{text}</p> <!-- Display the converted text -->
+    <div id="kokoro-hidden-audio" style="display: none;">
+        <audio id="kokoro-current-audio" preload="auto" autoplay data-speed="{speed}">
+            <source src="{ts_url}" type="audio/wav">
+        </audio>
+        <script>
+            console.log("KokoroTTS ({abbrev}): Embedded audio component loaded");
+
+            function setSpeakButtonEnabled(enabled, initialText) {{
+                var btnOriginal = document.getElementById("kokoro-audio-control");
+                var btnClone = document.getElementById("kokoro-audio-control-clone");
+
+                [btnOriginal, btnClone].forEach(btn => {{
+                    if (btn) {{
+                        btn.disabled = !enabled;
+                        btn.style.opacity = enabled ? "1" : "0.5";
+                        if (!enabled) {{
+                            btn.textContent = "Speak";
+                            //btn.className = "lg secondary svelte-cmf5ev"; // Disabled state
+                        }} else {{
+                            // When enabling, set correct "Speak" state styling
+                            //btn.textContent = "Speak";
+                            btn.textContent = initialText;
+                            btn.className = initialText === 'Speak' ? "lg primary svelte-cmf5ev" : "lg secondary svelte-cmf5ev";
+                            //btn.className = "lg primary svelte-cmf5ev"; // Speak state (orange border)
+                        }}
+                    }}
+                }});
+                console.log("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled);
+            }}
+            function forceButtonUpdate(text) {{
+                var btnClone = document.getElementById('kokoro-audio-control-clone');
+                var btnOriginal = document.getElementById('kokoro-audio-control');
+
+                if (btnClone) {{
+                    btnClone.textContent = text;
+                    if (text === 'Speak') {{
+                        btnClone.className = "lg primary svelte-cmf5ev";
+                    }} else {{
+                        btnClone.className = "lg secondary svelte-cmf5ev";
+                    }}
+                }}
+
+                if (btnOriginal) {{
+                    btnOriginal.textContent = text;
+                    if (text === 'Speak') {{
+                        btnOriginal.className = "lg primary svelte-cmf5ev";
+                    }} else {{
+                        btnOriginal.className = "lg secondary svelte-cmf5ev";
+                    }}
+                }}
+
+                setTimeout(() => {{
+                    if (btnClone) btnClone.textContent = text;
+                    if (btnOriginal) btnOriginal.textContent = text;
+                }}, 100);
+                setTimeout(() => {{
+                    if (btnClone) btnClone.textContent = text;
+                    if (btnOriginal) btnOriginal.textContent = text;
+                }}, 500);
+            }}
+
+            window.kokoroToggleAudio = function() {{
+                var audio = document.getElementById('kokoro-current-audio');
+
+                if (audio) {{
+                    window.kokoroCurrentAudio = audio;
+
+                    if (audio.paused || audio.ended) {{
+                        if (audio.ended) audio.currentTime = 0;
+                        audio.play();
+                        forceButtonUpdate('Pause');
+                        setSpeakButtonEnabled(true);
+                        console.log("KokoroTTS ({abbrev}_toggle): Playing audio");
+                    }} else {{
+                        audio.pause();
+                        forceButtonUpdate('Speak');
+                        setSpeakButtonEnabled(true);
+                        console.log("KokoroTTS ({abbrev}_toggle): Pausing audio");
+                    }}
+                }}
+            }};
+
+            function initializeAudioComponent() {{
+                // Clean up any existing old audio elements first
+                var existingAudios = document.querySelectorAll('audio[id="kokoro-current-audio"]');
+                if (existingAudios.length > 1) {{
+                    // Remove all but the last one (newest)
+                    for (var i = 0; i < existingAudios.length - 1; i++) {{
+                        existingAudios[i].remove();
+                        console.log("KokoroTTS ({abbrev}): Removed old audio element");
+                    }}
+                }}
+
+                var audio = document.getElementById('kokoro-current-audio');
+                if (audio && !audio.kokoroInitialized) {{
+                    audio.kokoroInitialized = true;
+
+                    audio.addEventListener('playing', function() {{
+                        forceButtonUpdate('Pause');
+                        setSpeakButtonEnabled(true);
+                        console.log("KokoroTTS ({abbrev}): Audio playing - button set to Pause");
+                    }});
+
+                    audio.addEventListener('pause', function() {{
+                        forceButtonUpdate('Speak');
+                        console.log("KokoroTTS ({abbrev}): Audio paused - button set to Speak");
+                    }});
+
+                    audio.addEventListener('ended', function() {{
+                        forceButtonUpdate('Speak');
+                        console.log("KokoroTTS ({abbrev}): Audio ended - button set to Speak");
+                    }});
+
+                    console.log("KokoroTTS ({abbrev}): Audio component fully initialized");
+
+                    // Check if audio is already playing (autoplay detection)
+                    setTimeout(() => {{
+                        if (audio && !audio.paused && !audio.ended) {{
+                            setSpeakButtonEnabled(true, 'Pause');  // Enable with correct text immediately
+                            console.log("KokoroTTS ({abbrev}): Detected autoplay, enabled as Pause");
+                        }} else {{
+                            setSpeakButtonEnabled(true, 'Speak');  // Enable with Speak text
+                        }}
+                    }}, 500);
+
+                    // Check if audio is already playing (autoplay detection)
+                    setTimeout(() => {{
+                        if (audio && !audio.paused && !audio.ended) {{
+                            forceButtonUpdate('Pause');
+                            console.log("KokoroTTS ({abbrev}): Detected autoplay, set button to Pause");
+                        }}
+                    }}, 500);
+                }}
+            }}
+
+            initializeAudioComponent();
+        </script>
+    </div>
+    """
+
+    return result
+
+
+def create_button_cloning_js(abbrev):
+    """Reusable button cloning functionality"""
+    result = f"""
+    function cloneKokoroButtons() {{
+        var originalBtn = document.getElementById("kokoro-audio-control");
+        var generateBtn = document.getElementById("Generate");
+
+        if (originalBtn && generateBtn && !document.getElementById("kokoro-audio-control-clone")) {{
+            var clonedBtn = originalBtn.cloneNode(true);
+            clonedBtn.id = "kokoro-audio-control-clone";
+
+            clonedBtn.classList.remove("kokoro-hidden-original");
+
+            generateBtn.insertAdjacentElement("afterend", clonedBtn);
+            clonedBtn.style.setProperty("margin-left", "-10px");
+
+            // Force clone to correct initial state regardless of original
+            clonedBtn.disabled = true;
+            clonedBtn.style.opacity = "0.5";
+            clonedBtn.textContent = "Speak";
+
+            [clonedBtn, originalBtn].forEach(btn => {{
+                btn.addEventListener("click", function() {{
+                    if (window.kokoroToggleAudio) window.kokoroToggleAudio();
+                }});
+            }});
+
+            console.log("KokoroTTS ({abbrev}): Button cloned");
+        }}
+    }}
+    """
+    return result
+
+
+def create_hidden_audio_js():
+    """Generic utility to enable HTML components with embedded scripts"""
+    abbrev = "chaj"
+    button_cloning_js = create_button_cloning_js(abbrev)
+    css_rule = '.kokoro-hidden-original { display: none !important; }'
+    result = f"""
+    console.log("KokoroTTS ({abbrev}): Script execution utility loaded");
+
+    // Inject CSS
+    var style = document.createElement('style');
+    style.textContent = '{css_rule}';
+    document.head.appendChild(style);
+
+
+    // Generic script executor for any HTML component
+    function executeEmbeddedScripts() {{
+        var containers = document.querySelectorAll('[id*="kokoro-"]');
+        containers.forEach(function(container) {{
+            if (!container.scriptsExecuted) {{
+                container.scriptsExecuted = true;
+                var scripts = container.getElementsByTagName('script');
+                for (var i = 0; i < scripts.length; i++) {{
+                    if (scripts[i].innerHTML) {{
+                        console.log("KokoroTTS ({abbrev}): Executing embedded script");
+                        eval(scripts[i].innerHTML);
+                    }}
+                }}
+            }}
+        }});
+    }}
+
+    {button_cloning_js}
+
+    // Run utilities
+        // Initialize buttons to disabled state on startup
+    function initializeButtonState() {{
+        var audio = document.getElementById('kokoro-current-audio');
+        if (!audio) {{
+            var btnOriginal = document.getElementById("kokoro-audio-control");
+            var btnClone = document.getElementById("kokoro-audio-control-clone");
+            [btnOriginal, btnClone].forEach(btn => {{
+                if (btn) {{
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                    btn.textContent = "Speak";
+                }}
+            }});
+            console.log("KokoroTTS ({abbrev}): Set buttons to disabled startup state");
+        }}
+    }}
+
+    setInterval(executeEmbeddedScripts, 300);
+    setTimeout(initializeButtonState, 100);  // Set initial state after buttons exist
+    cloneKokoroButtons();
+    """
+    return result
+
+
+
+
+def create_pure_audioplayr_js(url, speed, text):
+    name = "cpapjs"
+    result = f"""
+    <div id="kokoro-hidden-audio" style="border: 1px solid white; padding: 10px; margin: 5px;">
+        <button id="kokoro-audio-control" style="display: block;" disabled>Speak</button>
+        <p id="kokoro-original-text" style="display: block;">{text}</p>
         <script>
             let audioContext;
             let audioBuffer;
             let sourceNode;
             let isPlaying = false;
-            const playbackSpeed = {speed}; // Set your desired playback speed here
+            const playbackSpeed = {speed};
 
-            // Load audio file
+            console.log('KokoroTTS ({name}_init): Starting audio initialization');
+
             function loadAudio(url) {{
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                console.log('KokoroTTS ({name}_load): Attempting to load audio from:', url);
+
+                // Test with regular HTML5 audio first
+                var testAudio = new Audio(url);
+                testAudio.oncanplaythrough = function() {{
+                    console.log('KokoroTTS ({name}_load): HTML5 Audio can play this file');
+                }};
+                testAudio.onerror = function(e) {{
+                    console.log('KokoroTTS ({name}_load): HTML5 Audio failed:', e);
+                }};
+
+                try {{
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    console.log('KokoroTTS ({name}_load): AudioContext created, state:', audioContext.state);
+                }} catch(e) {{
+                    console.error('KokoroTTS ({name}_load): Failed to create AudioContext:', e);
+                    return;
+                }}
+
                 fetch(url)
                     .then(response => {{
+                        console.log('KokoroTTS ({name}_load): Fetch response:', response.status, response.ok);
                         if (!response.ok) {{
                             throw new Error('Network response was not ok: ' + response.statusText);
                         }}
                         return response.arrayBuffer();
                     }})
-                    .then(data => audioContext.decodeAudioData(data))
+                    .then(data => {{
+                        console.log('KokoroTTS ({name}_load): ArrayBuffer received, size:', data.byteLength);
+                        return audioContext.decodeAudioData(data);
+                    }})
                     .then(buffer => {{
+                        console.log('KokoroTTS ({name}_load): Audio decoded successfully, duration:', buffer.duration);
                         audioBuffer = buffer;
-                        document.getElementById('kokoro-audio-control').disabled = false; // Enable button
-                        document.getElementById('kokoro-audio-control').textContent = 'Play';
-                        document.getElementById('kokoro-original-text').style.display = 'block'; // Show the text
+                        document.getElementById('kokoro-audio-control').disabled = false;
+                        console.log('KokoroTTS ({name}_load): Button enabled');
                     }})
                     .catch(error => {{
-                        console.error('"KokoroTTS (cpja_fetch) Error loading audio:', error);
+                        console.error('KokoroTTS ({name}_load): Error in audio loading chain:', error);
                     }});
             }}
 
-            // Play or pause audio based on current state
             function toggleAudio() {{
-                if (!audioBuffer) return; // Do nothing if no audio is loaded
-
+                console.log('KokoroTTS ({name}_toggle): Toggle called, audioBuffer exists:', !!audioBuffer);
+                if (!audioBuffer) return;
                 if (isPlaying) {{
                     pauseAudio();
                 }} else {{
@@ -68,211 +330,125 @@ def create_pure_js_audioplayr(url, speed, text):
                 }}
             }}
 
-            // Play audio
             function playAudio() {{
+                console.log('KokoroTTS ({name}_play): Starting playback');
                 sourceNode = audioContext.createBufferSource();
                 sourceNode.buffer = audioBuffer;
-                sourceNode.playbackRate.value = playbackSpeed; // Use the fixed playback speed
+                sourceNode.playbackRate.value = playbackSpeed;
                 sourceNode.connect(audioContext.destination);
                 sourceNode.start(0);
                 isPlaying = true;
                 document.getElementById('kokoro-audio-control').textContent = 'Pause';
+
+                sourceNode.onended = function() {{
+                    console.log('KokoroTTS ({name}_play): Playback ended');
+                    isPlaying = false;
+                    document.getElementById('kokoro-audio-control').textContent = 'Speak';
+                }};
             }}
 
-            // Pause audio
             function pauseAudio() {{
+                console.log('KokoroTTS ({name}_pause): Pausing audio');
                 if (sourceNode) {{
                     sourceNode.stop();
                     isPlaying = false;
-                    document.getElementById('kokoro-audio-control').textContent = 'Play';
+                    document.getElementById('kokoro-audio-control').textContent = 'Speak';
                 }}
             }}
 
-            // Event listener for the button
             document.getElementById('kokoro-audio-control').addEventListener('click', toggleAudio);
+            console.log('KokoroTTS ({name}_init): Click listener attached');
 
-            // Load your audio file (replace '' with the actual file path)
             loadAudio('{url}');
         </script>
     </div>
     """
     return result
 
+# This one is destined to work in tandem with create_pure_audioplayr_js
+def create_pure_audio_js():
+    name = "cpaj"
+    result = f"""
+    console.log('KokoroTTS ({name}_init): Script loaded');
 
-
-
-
-def create_hidden_audio_html(url, speed, text):
-    """Create simple audio element - all JavaScript handled in custom_js"""
-    timestamp = int(time.time() * 1000)
-    ts_url = f"{url}?t={timestamp}"
-    js_code = create_common_audio_js("chah")
-    js_code = f""""<script>
-                    {js_code}
-                </script>"""
-    # js_code=""   # enable / disable option for testing
-    audio_html = f"""
-    <div id="kokoro-hidden-audio" style="display: none;">
-        <audio id="kokoro-current-audio" preload="auto" autoplay data-speed="{speed}">
-            <source src="{ts_url}" type="audio/wav">
-        </audio>
-        {js_code}
-    </div>
-    """
-    return audio_html
-
-
-
-def create_common_audio_js(abbrev):
-    return f"""
-        function setSpeakButtonEnabled(enabled) {{
-        var btnOriginal = document.getElementById("kokoro-audio-control");
-        var btnClone = document.getElementById("kokoro-audio-control-clone");
-
-        [btnOriginal, btnClone].forEach(btn => {{
-            if (btn) {{
-                btn.disabled = !enabled;
-                btn.style.opacity = enabled ? "1" : "0.5";
-
-                // Set correct initial text based on enabled state
-                if (!enabled) {{
-                    btn.textContent = "Speak";  // Disabled = no audio = "Speak"
+    // Function to manually execute scripts in dynamically loaded content
+    function executeScriptsInElement(element) {{
+        var scripts = element.getElementsByTagName('script');
+        for (var i = 0; i < scripts.length; i++) {{
+            var script = scripts[i];
+            if (script.innerHTML) {{
+                console.log('KokoroTTS ({name}_exec): Executing inline script');
+                try {{
+                    eval(script.innerHTML);
+                }} catch(e) {{
+                    console.error('KokoroTTS ({name}_exec): Script execution failed:', e);
                 }}
             }}
-        }});
-        console.log("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled, "text should be:", enabled ? "current state" : "Speak");
-    }}
-
-    function forceButtonUpdate(text) {{
-        var btnClone = document.getElementById('kokoro-audio-control-clone');
-        var btnOriginal = document.getElementById('kokoro-audio-control');
-
-        if (btnClone) btnClone.textContent = text;
-        if (btnOriginal) btnOriginal.textContent = text;
-
-        // Multiple attempts to fight Gradio
-        setTimeout(() => {{
-            if (btnClone) btnClone.textContent = text;
-            if (btnOriginal) btnOriginal.textContent = text;
-        }}, 100);
-        setTimeout(() => {{
-            if (btnClone) btnClone.textContent = text;
-            if (btnOriginal) btnOriginal.textContent = text;
-        }}, 500);
-    }}
-
-
-    window.kokoroToggleAudio = function() {{
-        var audio = window.kokoroCurrentAudio || document.getElementById('kokoro-current-audio');
-
-        if (audio) {{
-            window.kokoroCurrentAudio = audio;
-
-             // Add the playing event listener
-            audio.addEventListener('playing', function() {{
-                forceButtonUpdate('Pause');
-                setSpeakButtonEnabled(true);
-                console.log("KokoroTTS ({abbrev}_toggle): Now Playing audio");
-            }});
-
-            if (audio.paused || audio.ended) {{
-                if (audio.ended) audio.currentTime = 0;
-                audio.play();
-                forceButtonUpdate('Pause');
-                setSpeakButtonEnabled(true);
-                console.log("KokoroTTS ({abbrev}_toggle): Playing audio");
-            }} else {{
-                audio.pause();
-                forceButtonUpdate('Speak');
-                setSpeakButtonEnabled(true);
-                console.log("KokoroTTS ({abbrev}_toggle): Pausing audio");
-            }}
-        }}
-    }};
-
-
-
-    """
-
-def create_hidden_audio_js():
-    return ""
-    abbrfn="chaj"
-    common_js=create_common_audio_js(abbrfn)
-    return f"""
-    console.log("KokoroTTS ({abbrfn}): Script loaded");
-    {common_js}
-    function checkForNewAudio() {{
-        var audio = document.getElementById('kokoro-current-audio');
-        if (audio) {{
-            if (!window.kokoroCurrentAudio || window.kokoroCurrentAudio !== audio) {{
-                window.kokoroCurrentAudio = audio;
-                setSpeakButtonEnabled(true);
-
-                if (audio.kokoroEventsAttached) return;
-                audio.kokoroEventsAttached = true;
-
-                // Focus on the events that actually fire during autoplay
-                audio.addEventListener('playing', function() {{
-                    console.log("KokoroTTS ({abbrfn}_event): PLAYING event - setting button to Pause");
-                    forceButtonUpdate('Pause');
-                }});
-
-                audio.addEventListener('pause', function() {{
-                    console.log("KokoroTTS ({abbrfn}_event): PAUSE event - setting button to Speak");
-                    forceButtonUpdate('Speak');
-                }});
-
-                audio.addEventListener('ended', function() {{
-                    console.log("KokoroTTS ({abbrfn}_event): ENDED event - setting button to Speak");
-                    forceButtonUpdate('Speak');
-                }});
-
-                // Keep manual play for when user clicks
-                audio.addEventListener('play', function() {{
-                    console.log("KokoroTTS ({abbrfn}_event): PLAY event - setting button to Pause");
-                    forceButtonUpdate('Pause');
-                }});
-
-                console.log("KokoroTTS ({abbrfn}_check): Audio events attached");
-            }}
-        }} else if (window.kokoroCurrentAudio) {{
-            window.kokoroCurrentAudio = null;
-            setSpeakButtonEnabled(false);
         }}
     }}
 
+    // Monitor for new audio divs with scripts
+    function checkForNewScripts() {{
+        var audioDiv = document.getElementById('kokoro-hidden-audio');
+        if (audioDiv && !audioDiv.scriptsExecuted) {{
+            audioDiv.scriptsExecuted = true;
+            console.log('KokoroTTS ({name}_monitor): Found new audio div, executing scripts');
+            executeScriptsInElement(audioDiv);
+        }}
+    }}
 
-    setInterval(checkForNewAudio, 500);
-    setTimeout(() => setSpeakButtonEnabled(false), 100);
-
-    // Button cloning (unchanged)
+    // Button cloning code
     function tryCloneButton(attempts) {{
         attempts = attempts || 0;
         if (attempts > 10) return;
 
-        var originalBtn = document.getElementById("kokoro-audio-control");
-        var generateBtn = document.getElementById("Generate");
+        var originalBtn = document.getElementById('kokoro-audio-control');
+        var generateBtn = document.getElementById('Generate');
 
-        if (originalBtn && generateBtn && !document.getElementById("kokoro-audio-control-clone")) {{
+        console.log('KokoroTTS ({name}_clone): Attempt', attempts + 1, '- Original:', !!originalBtn, 'Generate:', !!generateBtn);
+
+        if (originalBtn && generateBtn && !document.getElementById('kokoro-audio-control-clone')) {{
             var clonedBtn = originalBtn.cloneNode(true);
-            clonedBtn.id = "kokoro-audio-control-clone";
-            generateBtn.insertAdjacentElement("afterend", clonedBtn);
-            clonedBtn.style.setProperty("margin-left", "-10px");
+            clonedBtn.id = 'kokoro-audio-control-clone';
+            generateBtn.insertAdjacentElement('afterend', clonedBtn);
+            clonedBtn.style.setProperty('margin-left', '-10px');
 
-            [clonedBtn, originalBtn].forEach(btn => {{
-                btn.addEventListener("click", function() {{
-                    window.kokoroToggleAudio();
-                }});
+            clonedBtn.addEventListener('click', function() {{
+                console.log('KokoroTTS ({name}_clone): Clone clicked');
+                originalBtn.click();
             }});
 
-            console.log("KokoroTTS ({abbrfn}_clone): Button cloned successfully");
-        }} else if (!document.getElementById("kokoro-audio-control-clone")) {{
+            console.log('KokoroTTS ({name}_clone): Button cloned successfully');
+            startButtonSync();
+        }} else if (!document.getElementById('kokoro-audio-control-clone')) {{
             setTimeout(function() {{ tryCloneButton(attempts + 1); }}, 200);
         }}
-
     }}
+
+    function startButtonSync() {{
+        function syncButtons() {{
+            var original = document.getElementById('kokoro-audio-control');
+            var clone = document.getElementById('kokoro-audio-control-clone');
+
+            if (original && clone) {{
+                if (clone.textContent !== original.textContent) {{
+                    clone.textContent = original.textContent;
+                    console.log('KokoroTTS ({name}_sync): Synced button text to:', original.textContent);
+                }}
+                clone.disabled = original.disabled;
+                clone.style.opacity = original.disabled ? '0.5' : '1';
+            }}
+        }}
+
+        setInterval(syncButtons, 100);
+    }}
+
+    // Start monitoring and cloning
+    setInterval(checkForNewScripts, 300);
     tryCloneButton();
     """
+    return result
+
 
 def _create_hidden_audio_html(url, speed, text):
     """
