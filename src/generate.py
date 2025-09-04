@@ -12,11 +12,11 @@ from modules import shared
 from nltk.tokenize import sent_tokenize
 import nltk
 
-# Download the Kokoro weights
+from extensions.KokoroTTS_4_TGUI.src.debug import *
 
+# Download the Kokoro weights
 def download_kokoro_weights():
     """Download the Kokoro weights."""
-    
     snapshot_path_base = pathlib.Path(__file__).parent / 'models--hexgrad--Kokoro-82M' / 'snapshots'
     try:
         snapshot_paths = os.listdir(snapshot_path_base)
@@ -28,12 +28,10 @@ def download_kokoro_weights():
                 shutil.rmtree(snapshot_path_base)
                 break
 
-
-    snapshot_download(repo_id="hexgrad/Kokoro-82M", cache_dir =pathlib.Path(__file__).parent)
+    snapshot_download(repo_id="hexgrad/Kokoro-82M", cache_dir=pathlib.Path(__file__).parent)
     if not snapshot_paths:
         snapshot_paths = os.listdir(snapshot_path_base)
     from .voices import VOICES
-
     return snapshot_path_base / snapshot_paths[0]
 
 snapshot_path = download_kokoro_weights()
@@ -57,36 +55,30 @@ if torch.cuda.is_available():
 else:
     device = 'cpu'
 
-
-    
-
-
 model_path = snapshot_path / 'kokoro-v1_0.pth'
 MODEL = None
-
 voice_name, voicepack = None, None
 
 def load_voice(voice=None):
     """Load a voice by name.
-    
+
     Args:
-        voice (str, optional): The name of the voice to load. Defaults to `af`.
+        voice (str, optional): The name of the voice to load. Defaults to `af_bella`.
     """
     global voice_name, voicepack
     voice_name = voice or ('af_bella' or VOICES[0])
-    voise_path = snapshot_path / 'voices' / f'{voice_name}.pt'
-    voicepack = torch.load(voise_path, weights_only=True).to(device)
-    print(f'Loaded voice: {voice_name}')
+    voice_path = snapshot_path / 'voices' / f'{voice_name}.pt'
+    voicepack = torch.load(voice_path, weights_only=True).to(device)
+    log(f'Loaded voice: {voice_name}')
 
 
-load_voice()
 
-
-def run(text, preview=False):
+def run(text, output_path=None, preview=False):
     """Generate audio from text.
 
     Args:
         text (str): The text to generate audio from.
+        output_path (str, optional): Path to save the audio file. Defaults to audio/{msg_id or preview}.wav.
         preview (bool, optional): Whether to generate a preview audio. Defaults to False.
 
     Returns:
@@ -100,14 +92,15 @@ def run(text, preview=False):
         segments = generate_audio_chunks(text_chunks)
     except IndexError:
         if sentence_based:
-            set_plitting_type("Word")
+            set_splitting_type("Split by Word")
             text_chunks = split_text(text)
             segments = generate_audio_chunks(text_chunks)
-            set_plitting_type()
+            set_splitting_type()
 
-    full_adio = concatenate_audio_segments(segments)
-    audio_path = pathlib.Path(__file__).parent / '..' / 'audio' / f'{"preview" if preview else msg_id}.wav'
-    full_adio.export(audio_path, format="wav")
+    full_audio = concatenate_audio_segments(segments)
+    default_audio_path = pathlib.Path(__file__).parent / '..' / 'audio' / f'{"preview" if preview else msg_id}.wav'
+    audio_path = output_path or default_audio_path
+    full_audio.export(audio_path, format="wav")
 
     del MODEL
     gc.collect()
@@ -116,7 +109,7 @@ def run(text, preview=False):
 
 sentence_based = True
 
-def set_plitting_type(method="Split by sentence"):
+def set_splitting_type(method="Split by sentence"):
     """Set the splitting method for the text.
 
     Args:
@@ -124,12 +117,12 @@ def set_plitting_type(method="Split by sentence"):
     """
     global sentence_based
     sentence_based = True if method == "Split by sentence" else False
-    print(f'Splitting method: {"sentence" if sentence_based else "Word"}')
+    log(f'Splitting method: {"sentence" if sentence_based else "word"}')
 
-set_plitting_type()
+set_splitting_type()
 
 def split_text(text):
-    """Split the text into chunks of sentences or word up to 510 token.
+    """Split the text into chunks of sentences or words up to 510 tokens.
 
     Args:
         text (str): The text to split.
@@ -137,16 +130,12 @@ def split_text(text):
     Returns:
         list: The text chunks.
     """
-
     global MODEL
-    
     max_token = 510
     text_parts = sent_tokenize(text) if sentence_based else text.split()
     current_text_parts = []
     chunks = []
     current_chunk_len = 0
-
-
 
     for text_part in text_parts:
         tokenized_textpart = tokenize(phonemize(text_part, lang=voice_name[0]))
@@ -162,10 +151,8 @@ def split_text(text):
             current_text_parts = []
             current_chunk_len = 0
 
-            
         current_text_parts.append(text_part)
         current_chunk_len += additional_tokens
-
 
     # Add remaining words as the final chunk if any
     if current_text_parts:
@@ -173,11 +160,8 @@ def split_text(text):
         tokenized_chunk = tokenize(phonemize(current_text, lang=voice_name[0]))
         chunks.append(tokenized_chunk)
 
-
     del text_parts
-
     return chunks
-
 
 def generate_audio_chunks(chunks):
     """Generate audio chunks from the text chunks.
@@ -188,7 +172,6 @@ def generate_audio_chunks(chunks):
     Returns:
         list: The audio segments.
     """
-
     out = {'out': [], 'ps': []}
     for i, chunk in enumerate(chunks):
         out_chunk, ps = generate(MODEL, chunk, voicepack, lang=voice_name[0])
@@ -196,12 +179,9 @@ def generate_audio_chunks(chunks):
         out['ps'].append(ps)
 
     segments = []
-
     for i, chunk in enumerate(out['out']):
         # Normalize to 16-bit PCM
         normalized_audio = np.int16(chunk / np.max(np.abs(chunk)) * 32767)
-
-        # Create an AudioSegment
         segments.append(AudioSegment(
             data=normalized_audio.tobytes(),
             sample_width=normalized_audio.dtype.itemsize,  # 2 bytes for int16
@@ -220,12 +200,11 @@ def concatenate_audio_segments(segments):
     Returns:
         AudioSegment: The concatenated audio segment.
     """
-
-    # Concatenate all segments
+    if not segments:
+        return None
     audio_segment = segments[0]
     for segment in segments[1:]:
         audio_segment += segment
-
     return audio_segment
 
 if __name__ == '__main__':
