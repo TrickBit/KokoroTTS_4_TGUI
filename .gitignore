@@ -1,4 +1,5 @@
 __pycache__
+nltk_data/
 src/__pycache__
 audio/*.wav
 venv/
@@ -7,3 +8,4 @@ src/models--hexgrad--Kokoro-82M/audio
 src/.locks
 kokoro-v1.0.onnx
 voices-v1.0.bin
+settings.yaml
