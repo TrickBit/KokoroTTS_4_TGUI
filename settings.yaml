@@ -1,9 +1,0 @@
-kokoro_enable_tts: true
-kokoro_experimental: false
-kokoro_preview_text: |-
-  Hello, I'm {VNAME}{VREGION}, how are you today friend?
-  I'm doing well, thanks for asking! I've been processing and generating text all morning, helping users like you with their queries. I've also been learning and improving my language understanding and generation capabilities. It's a busy day, but I'm happy to assist you with anything you need!
-
-  What's on your mind? What would you like to talk about or ask about? I'm all ears (or rather, all text)! Martin: I am interested in learning about the concept of the Singularity and how it might impact our world. Can you provide an overview of the concept and its potential implications?
-kokoro_speed: 0.85
-kokoro_voice: bf_emma

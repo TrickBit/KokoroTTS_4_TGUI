@@ -14,6 +14,44 @@ import nltk
 
 from extensions.KokoroTTS_4_TGUI.src.debug import *
 
+
+# Add this new function after the imports
+def cleanup_old_audio_files(max_files=10, max_age_hours=24):
+    """
+    Clean up old audio files to manage disk usage.
+    Keeps only the most recent files and removes files older than max_age_hours.
+    """
+    try:
+        audio_dir = pathlib.Path(__file__).parent / '..' / 'audio'
+        if not audio_dir.exists():
+            return
+
+        # Get all .wav files with their modification times
+        wav_files = list(audio_dir.glob('*.wav'))
+        if len(wav_files) <= max_files:
+            return
+
+        # Sort by modification time (newest first)
+        wav_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+        # Remove old files beyond max_files limit
+        files_to_remove = wav_files[max_files:]
+        current_time = time.time()
+
+        for file_path in files_to_remove:
+            try:
+                # Also check age
+                file_age_hours = (current_time - file_path.stat().st_mtime) / 3600
+                if file_age_hours > max_age_hours or len(wav_files) > max_files:
+                    file_path.unlink()
+                    log(f"Cleaned up old audio file: {file_path.name}")
+            except Exception as e:
+                log(f"Error removing file {file_path}: {e}")
+
+    except Exception as e:
+        log(f"Error in audio cleanup: {e}")
+
+
 # Download the Kokoro weights
 def download_kokoro_weights():
     """Download the Kokoro weights."""
@@ -37,8 +75,34 @@ def download_kokoro_weights():
 snapshot_path = download_kokoro_weights()
 
 # Download the models for sentence splitting
-nltk.download('punkt')
-nltk.download('punkt_tab')
+# This is pretty crap - always downloading to ${HOME}/ntlk_data
+# nltk.download('punkt')
+# nltk.download('punkt_tab')
+# The following should improve on the above
+#
+# Define the custom data directory
+nltk_data_dir = pathlib.Path(__file__).parent.parent / 'nltk_data'
+
+# Ensure the directory exists
+nltk_data_dir.mkdir(parents=True, exist_ok=True)
+
+# Set the NLTK data path to include the custom directory
+nltk.data.path.append(str(nltk_data_dir))
+
+# Function to download NLTK data only if not already present
+def download_nltk_data(resource):
+    try:
+        # Check if the resource is already available
+        nltk.data.find(resource)
+        log(f"{resource} is already downloaded.")
+    except LookupError:
+        # If not found, download the resource
+        log(f"Downloading {resource}...")
+        nltk.download(resource, download_dir=str(nltk_data_dir))
+
+# Download the required resources
+download_nltk_data('punkt')
+download_nltk_data('punkt_tab')
 
 # Set the environment variables for eSpeak NG on Windows
 if os.name == 'nt':
@@ -84,6 +148,10 @@ def run(text, output_path=None, preview=False):
     Returns:
         str: The message ID.
     """
+      # Clean up old files before generating new ones
+    if not preview:  # Don't cleanup during preview generation
+        cleanup_old_audio_files()
+
     global MODEL, voicepack
     MODEL = build_model(model_path, device)
     msg_id = str(uuid.uuid4())
