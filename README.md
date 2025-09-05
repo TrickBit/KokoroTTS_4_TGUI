@@ -35,27 +35,45 @@ The extension will automatically install required packages on first run.
 
 ## 🛠️ Installation
 
-1. **Clone the extension** to your `text-generation-webui/extensions/` directory:
+### Prerequisites
+- **Text Generation WebUI** must be installed and working
+- **eSpeak NG**: Download from [eSpeak NG Releases](https://github.com/espeak-ng/espeak-ng/releases)
+- **FFmpeg**: Download from [FFmpeg Downloads](https://ffmpeg.org/download.html)
+
+### Installation Steps
+
+1. **Navigate to your text-generation-webui extensions directory**:
    ```bash
-   cd text-generation-webui/extensions/
-   git clone https://github.com/TrickBit/KokoroTTS_4_TGUI.git
+   cd /path/to/text-generation-webui/extensions/
    ```
 
-2. **Install dependencies** using your platform's script:
-
-   **Windows:**
-   ```cmd
-   .\cmd_windows.bat
-   pip install -r extensions\KokoroTTS_4_TGUI\requirements.txt
+2. Clone this extension:
+    ```bash
+    git clone https://github.com/TrickBit/KokoroTTS_4_TGUI.git
    ```
-
-   **Linux:**
+3. Activate your text-generation-webui Python environment:
    ```bash
-   ./cmd_linux.sh
-   pip install -r extensions/KokoroTTS_4_TGUI/requirements.txt
-   ```
+   # If using venv (adjust path as needed):
+    source ../venv/bin/activate
 
-3. **Start text-generation-webui** and enable the extension in the Interface tab
+    # Or if using conda:
+    conda activate textgen
+
+    # Or if using the webui's start script environment
+   ```
+4. Install Python dependencies:
+   ```bash
+   pip install -r KokoroTTS_4_TGUI/requirements.txt
+   ```
+5. Start text-generation-webui and navigate to the Interface tab to enable the KokoroTTS extension
+
+
+First Run
+
+The extension will automatically download the Kokoro model weights on first use
+NLTK language data will be downloaded to the extension directory
+Default settings will be created in extensions/KokoroTTS_4_TGUI/settings.yaml
+
 
 ## 🎮 Usage
 
