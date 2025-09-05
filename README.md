@@ -1,84 +1,169 @@
-# Kokoro-Based TTS Extension for [Oobabooga Text Generation WebUI](https://github.com/oobabooga/text-generation-webui)
+# KokoroTTS_4_TGUI : KokoroTTS for Text Generation WebUI - Enhanced Edition
 
-Enhance your text generation experience with the Kokoro TTS extension, seamlessly integrating with the Oobabooga Text Generation WebUI.
+A comprehensive Text-to-Speech extension for [Oobabooga Text Generation WebUI](https://github.oobabooga/text-generation-webui) featuring the Kokoro TTS model with advanced audio controls, clean architecture, and optimized performance.
 
-## License
+## ✨ Key Features
 
-- **Project License:** This extension is released under the [MIT License](LICENSE) and is built upon the [Original Kokoro 82M Inference Code](https://huggingface.co/hexgrad/Kokoro-82M/tree/c97b7bbc3e60f447383c79b2f94fee861ff156ac).
+- **🎙️ High-Quality Voice Synthesis** - Powered by Kokoro-82M model
+- **🎛️ Advanced Audio Controls** - Speed and pitch adjustment
+- **🔄 Smart Text Processing** - Intelligent handling of code blocks and markdown
+- **🎯 Self-Contained Installation** - Everything stays within the extension directory
+- **🔊 Integrated Audio Player** - Auto-playing audio with play/pause controls
+- **⚙️ Comprehensive Settings** - Persistent configuration with intelligent defaults
+- **🧹 Automatic Cleanup** - Smart audio file management
+- **🐛 Robust Error Handling** - Configurable debug logging
 
-- **Model Weights:** The model weights are **not** covered by the MIT License. They are licensed under the [Apache 2.0 License](https://huggingface.co/hexgrad/Kokoro-82M) and will be directly downloaded from Hugging Face.
+## 🚀 What's New in This Version
 
-## Features
+This enhanced version significantly improves upon the original with:
 
-**Current Version:** Kokoro v1
-**Supported Languages:** English
+- **Clean Architecture** - No scattered files in user directories
+- **Integrated Audio System** - Built-in player with speed/pitch controls
+- **Smart Settings Management** - YAML-based configuration with hot-reloading
+- **Optimized Performance** - Efficient audio generation and cleanup
+- **Better Text Processing** - Configurable code block handling
+- **Professional UI** - Streamlined interface with grouped controls
 
-Kokoro TTS is limited to inputs up to **510 tokens**. *Note that Kokoro tokens differ from LLM tokens.* This extension allows you to generate longer audio outputs by splitting the input text into segments and concatenating the resulting audio.
+## 📋 Requirements
 
-## Audio Play
-> [!NOTE] 
-> Currently, the Audio Play feature is not available in the main branch as it is still in development, but you can see [here](https://github.com/h43lb1t0/KokoroTtsTexGernerationWebui/blob/personas/Audio_Play.md) how to use it.
-
-Unique TTS voices are assigned to each speaker in dialogue to get a audio play like experience. 
-
-### Text Splitting Methods
-
-- **Split by Sentence:** Divides the text into chunks of complete sentences, each chunk containing fewer than or 510 tokens.
-    - This method may fail to split the text into sentences if the input text contains unusual punctuation or formatting. In such cases, the extension will fall back to the "Split by Word" method for this one text.
-- **Split by Word:** Divides the text into chunks of individual words, each chunk containing fewer than or 510 tokens.
-
-*I recommend using the "Split by Sentence" method to maintain context and ensure higher quality audio output.*
-
-## Installation
-
-### Prerequisites
-
-Before installing the extension, ensure you have the following dependencies installed:
-
-- **eSpeak:** Download from [eSpeak NG Releases](https://github.com/espeak-ng/espeak-ng/releases).
-- **FFmpeg:** Download from [FFmpeg Downloads](https://ffmpeg.org/download.html).
+### System Dependencies
+- **eSpeak NG**: Download from [eSpeak NG Releases](https://github.com/espeak-ng/espeak-ng/releases)
+- **FFmpeg**: Download from [FFmpeg Downloads](https://ffmpeg.org/download.html)
 
 ### Python Dependencies
+The extension will automatically install required packages on first run.
 
-Install the required Python packages using the appropriate script for your operating system.
+## 🛠️ Installation
 
-#### Windows
+1. **Clone the extension** to your `text-generation-webui/extensions/` directory:
+   ```bash
+   cd text-generation-webui/extensions/
+   git clone https://github.com/TrickBit/KokoroTTS_4_TGUI.git
+   ```
 
-1. Run the Windows setup script:
-    ```cmd
-    .\cmd_windows.bat
-    ```
-2. Install the Python dependencies:
-    ```cmd
-    pip install -r extensions\KokoroTtsTextGenerationWebUI\requirements.txt
-    ```
+2. **Install dependencies** using your platform's script:
 
-#### Linux
+   **Windows:**
+   ```cmd
+   .\cmd_windows.bat
+   pip install -r extensions\KokoroTTS_4_TGUI\requirements.txt
+   ```
 
-1. Run the Linux setup script:
-    ```bash
-    ./cmd_linux.sh
-    ```
-2. Install the Python dependencies:
-    ```bash
-    pip install -r extensions/KokoroTtsTextGenerationWebUI/requirements.txt
-    ```
+   **Linux:**
+   ```bash
+   ./cmd_linux.sh
+   pip install -r extensions/KokoroTTS_4_TGUI/requirements.txt
+   ```
 
-## Multiple GPU Support
+3. **Start text-generation-webui** and enable the extension in the Interface tab
 
-By default, the extension utilizes the first available GPU. To specify a different GPU, modify the `device` variable in `src/generate.py` to your desired GPU identifier.
+## 🎮 Usage
 
-## Roadmap
+### Basic Setup
+1. **Enable TTS** - Check "Enable TTS" to automatically generate speech for AI responses
+2. **Select Voice** - Choose from British or American English voices
+3. **Adjust Settings** - Customize speed, pitch, and text processing options
 
-- [x] Implement the extension
-- [x] ~~Kokoro v0.19~~
-- [x] Kokoro v1
-- [x] Support for all operating systems
-- [x] Voice selection feature
-- [ ] Only switch to "Split by Word" for the failing text part, not the entire text
-- [ ] Support for other languages than English
-- [ ] Support for future versions of Kokoro
+### Voice Controls
+- **Speed Control** (0.5x - 1.5x) - Adjust playback speed without pitch change
+- **Pitch Control** (0.5x - 1.5x) - Modify voice pitch for creative effects
+- **Voice Preview** - Test settings with customizable preview text
 
-## Contributing
+### Text Processing
+- **Smart Code Handling** - Choose whether to speak or skip code blocks
+- **Sentence Splitting** - Intelligent text segmentation for long inputs
+- **Markdown Processing** - Clean handling of formatted text
 
-I welcome contributions to improve this project! If you'd like to contribute, please create a pull request or open an issue. Your improvements and suggestions are highly appreciated.
+### Audio Management
+- **Integrated Player** - Auto-playing audio with play/pause controls
+- **Smart Cleanup** - Automatic removal of old audio files
+- **Speed Optimization** - Efficient generation and playback
+
+## ⚙️ Configuration
+
+Settings are automatically saved to `settings.yaml` and include:
+
+- Voice selection and preview text
+- Speed and pitch preferences
+- Text processing options
+- Debug logging levels
+- Audio management settings
+
+## 🎯 Technical Details
+
+### Supported Languages
+- **English** (British and American variants)
+
+### Token Limitations
+- Kokoro TTS supports up to 510 tokens per segment
+- The extension automatically splits longer text into manageable chunks
+- Sentence-based splitting preserves context and audio quality
+
+### GPU Support
+- Automatically detects and uses available GPU
+- Falls back to CPU if no GPU is available
+- Modify `device` variable in `src/generate.py` for specific GPU selection
+
+## 🔧 Troubleshooting
+
+### Audio Issues
+- Ensure eSpeak NG and FFmpeg are properly installed
+- Check debug logs (configurable in settings)
+- Verify GPU/CPU resources are available
+
+### Performance Optimization
+- Enable audio cleanup to manage disk usage
+- Adjust chunk splitting method based on your content
+- Monitor debug logs for performance insights
+
+## 📜 License & Credits
+
+## 🙏 Acknowledgments
+
+### Original Author
+Special thanks to **h43lb1t0** for creating the original KokoroTTS extension for text-generation-webui. This enhanced version builds upon their foundational work in integrating Kokoro TTS with the Oobabooga interface.
+
+- **Original Repository**: [h43lb1t0/KokoroTtsTexGernerationWebui](https://github.com/h43lb1t0/KokoroTtsTexGernerationWebui)
+- **Original Concept**: Text segmentation and Kokoro model integration
+
+### Additional Credits
+- **Kokoro TTS Model**: [hexgrad](https://huggingface.co/hexgrad) for the Kokoro-82M model
+- **Text Generation WebUI**: [oobabooga](https://github.com/oobabooga/text-generation-webui) for the base platform
+- **Community Contributors**: Various community members who provided feedback and suggestions
+
+### Project License
+This enhanced extension is released under the [MIT License](LICENSE)
+
+### Original Sources
+- **Base Extension**: [h43lb1t0/KokoroTtsTexGernerationWebui](https://github.com/h43lb1t0/KokoroTtsTexGernerationWebui)
+- **Kokoro Model**: [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache 2.0 License)
+- **Model Weights**: Downloaded directly from Hugging Face under Apache 2.0 License
+
+### Enhancement Credits
+- Enhanced architecture and audio system
+- Integrated settings and UI improvements
+- Performance optimizations and cleanup systems
+- Advanced text processing and error handling
+
+## 🤝 Contributing
+
+Contributions are welcome! This version focuses on stability and clean architecture. Please:
+
+1. **Fork the repository**
+2. **Create a feature branch**
+3. **Submit a pull request** with detailed description
+4. **Follow existing code style** and documentation patterns
+
+## 🗺️ Roadmap
+
+- **Multi-language Support** - Expand beyond English
+- **Voice Mixing** - Blend multiple voice characteristics
+- **Advanced Effects** - Additional audio processing options
+- **API Integration** - External TTS service support
+
+---
+
+**Version**: v1.0 - Enhanced Edition
+**Compatibility**: Text Generation WebUI (Oobabooga)
+**Model**: Kokoro-82M (English)
+**Status**: Stable Release
