@@ -3,7 +3,7 @@ import html
 from modules import shared
 from extensions.KokoroTTS_4_TGUI.src.debug import *
 
-def clean_text_for_tts(text):
+def clean_text_for_tts(text, preprocess_code=False):
     """
     Complete text cleaning for TTS - handles code blocks, markdown, and basic cleanup.
     Used by both standard and experimental modes.
@@ -15,9 +15,6 @@ def clean_text_for_tts(text):
 
     # Basic HTML entity decoding
     cleaned = html.unescape(text)
-
-    # Check if code/markdown preprocessing is enabled
-    preprocess_code = getattr(shared.args, 'kokoro_preprocess_code', True)
 
     if preprocess_code:
         # Handle code blocks and markdown

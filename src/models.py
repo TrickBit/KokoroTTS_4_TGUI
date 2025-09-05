@@ -3,7 +3,9 @@ from .istftnet import AdaIN1d, Decoder
 from munch import Munch
 from pathlib import Path
 from .plbert import load_plbert
-from torch.nn.utils import weight_norm, spectral_norm
+# from torch.nn.utils import weight_norm, spectral_norm
+from torch.nn.utils.parametrizations import weight_norm
+from torch.nn.utils import remove_weight_norm
 import json
 import numpy as np
 import os
@@ -264,12 +266,17 @@ class DurationEncoder(nn.Module):
         super().__init__()
         self.lstms = nn.ModuleList()
         for _ in range(nlayers):
-            self.lstms.append(nn.LSTM(d_model + sty_dim, 
-                                 d_model // 2, 
-                                 num_layers=1, 
-                                 batch_first=True, 
-                                 bidirectional=True, 
-                                 dropout=dropout))
+            # self.lstms.append(nn.LSTM(d_model + sty_dim,
+            #                      d_model // 2,
+            #                      num_layers=1,
+            #                      batch_first=True,
+            #                      bidirectional=True,
+            #                      dropout=dropout))
+            self.lstms.append(nn.LSTM(d_model + sty_dim,
+                                 d_model // 2,
+                                 num_layers=1,
+                                 batch_first=True,
+                                 bidirectional=True))
             self.lstms.append(AdaLayerNorm(sty_dim, d_model))
         
         

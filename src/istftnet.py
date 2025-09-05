@@ -1,7 +1,9 @@
 # https://github.com/yl4579/StyleTTS2/blob/main/Modules/istftnet.py
 from scipy.signal import get_window
 from torch.nn import Conv1d, ConvTranspose1d
-from torch.nn.utils import weight_norm, remove_weight_norm
+# from torch.nn.utils import weight_norm, remove_weight_norm
+from torch.nn.utils.parametrizations import weight_norm
+from torch.nn.utils import remove_weight_norm
 import numpy as np
 import torch
 import torch.nn as nn
