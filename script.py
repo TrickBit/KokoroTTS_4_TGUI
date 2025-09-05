@@ -146,7 +146,14 @@ def load_settings():
     default_preview_text = settings.get('kokoro_preview_text', generate_default_preview_text())
     default_experimental = bool(settings.get('kokoro_experimental', False))
     default_preprocess_code = bool(settings.get('kokoro_preprocess_code', False))
-    default_debug_mode = bool(settings.get('kokoro_enable_debug', True))  # Add this line
+
+    # Handle debug mode - convert old boolean setting to new string setting
+    debug_setting = settings.get('kokoro_enable_debug', 'errors')
+    if isinstance(debug_setting, bool):
+        default_debug_mode = 'all' if debug_setting else 'off'
+    else:
+        default_debug_mode = debug_setting if debug_setting in ['off', 'errors', 'all'] else 'errors'
+
     default_voice = settings.get('kokoro_voice', VOICES[0])
     # Add icon style setting
     default_icon_style = settings.get('kokoro_icon_style', DEFAULT_ICON_STYLE)
@@ -442,10 +449,11 @@ def ui():
                 info="Convert code blocks and markdown to speech-friendly text",
                 interactive=True
             )
-            debug_mode = gr.Checkbox(  # Add this
+            debug_mode = gr.Radio(  # Change from Checkbox to Radio
+                choices=["off", "errors", "all"],
+                value="errors" if default_debug_mode else "off",
                 label="Enable debug mode",
-                value=default_debug_mode,
-                info="Show detailed status messages and enhanced logging",
+                info="off: no console logging, errors: only errors, all: full logging including info",
                 interactive=True
             )
             status_textbox = gr.Textbox(label="Status", interactive=False)
@@ -482,7 +490,7 @@ def ui():
         experimental_mode.change(on_experimental_mode_change, inputs=[experimental_mode], outputs=[status_textbox])
         preprocess_code.change(lambda x: save_setting("preprocess_code", x), inputs=[preprocess_code])
         debug_mode.change(lambda x: save_setting("debug_mode", x), inputs=[debug_mode])
-
+        debug_mode.change(lambda x: save_setting("enable_debug", x), inputs=[debug_mode])
 
         # Update audio button visibility when TTS is toggled
         enable_tts.change(

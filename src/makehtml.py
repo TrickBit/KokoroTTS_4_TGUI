@@ -5,6 +5,23 @@ from modules import shared
 from extensions.KokoroTTS_4_TGUI.src.debug import *
 
 
+
+def get_console_log_prefix():
+    """Get the appropriate console logging prefix based on debug setting"""
+    debug_setting = getattr(shared.args, 'kokoro_enable_debug', 'errors')
+
+    if debug_setting == 'off' or debug_setting is False:
+        return "//", "//"  # Both info and error disabled
+    elif debug_setting == 'errors' or debug_setting is True:
+        return "//", "console.error"  # Only errors enabled
+    elif debug_setting == 'all':
+        return "console.log", "console.error"  # Both enabled
+    else:
+        return "//", "console.error"  # Default to errors only
+
+
+
+
 # These next two function mad it easier to jest pairs without modifying script.py
 def create_ai_audio_html(url, speed, text):
     # return make_standard_autoplay(url,speed, text)
@@ -24,36 +41,45 @@ def create_hidden_audio_html(url, speed, text):
     timestamp = int(time.time() * 1000)
     ts_url = f"{url}?t={timestamp}"
 
+    # Get logging prefixes for info and error messages
+    info_log, error_log = get_console_log_prefix()
+
     result = f"""
     <div id="kokoro-hidden-audio" style="display: none;">
         <audio id="kokoro-current-audio" preload="auto" autoplay data-speed="{speed}">
             <source src="{ts_url}" type="audio/wav">
         </audio>
         <script>
-            console.log("KokoroTTS ({abbrev}): Embedded audio component loaded");
+            {info_log}("KokoroTTS ({abbrev}): Embedded audio component loaded");
 
             function setSpeakButtonEnabled(enabled, initialText) {{
                 var btnOriginal = document.getElementById("kokoro-audio-control");
                 var btnClone = document.getElementById("kokoro-audio-control-clone");
 
-                [btnOriginal, btnClone].forEach(btn => {{
-                    if (btn) {{
-                        btn.disabled = !enabled;
-                        btn.style.opacity = enabled ? "1" : "0.5";
-                        if (!enabled) {{
-                            btn.textContent = "Speak";
-                            //btn.className = "lg secondary svelte-cmf5ev"; // Disabled state
-                        }} else {{
-                            // When enabling, set correct "Speak" state styling
-                            //btn.textContent = "Speak";
-                            btn.textContent = initialText;
-                            btn.className = initialText === 'Speak' ? "lg primary svelte-cmf5ev" : "lg secondary svelte-cmf5ev";
-                            //btn.className = "lg primary svelte-cmf5ev"; // Speak state (orange border)
-                        }}
+                if (btnClone) {{
+                    btnClone.disabled = !enabled;
+                    btnClone.style.opacity = enabled ? "1" : "0.5";
+                    if (!enabled) {{
+                        btnClone.textContent = "Speak";
+                    }} else {{
+                        btnClone.textContent = initialText;
+                        btnClone.className = initialText === 'Speak' ? "lg primary svelte-cmf5ev" : "lg secondary svelte-cmf5ev";
                     }}
-                }});
-                console.log("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled);
+                }}
+                if (btnOriginal) {{
+                    btnOriginal.disabled = !enabled;
+                    // Only update text content, no visual styling
+                    if (!enabled) {{
+                        btnOriginal.textContent = "Speak";
+                    }} else {{
+                        btnOriginal.textContent = initialText;
+                    }}
+                    // Keep it hidden
+                    btnOriginal.classList.add("kokoro-hidden-original");
+                }}
+                {info_log}("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled);
             }}
+
             function forceButtonUpdate(text) {{
                 var btnClone = document.getElementById('kokoro-audio-control-clone');
                 var btnOriginal = document.getElementById('kokoro-audio-control');
@@ -69,11 +95,14 @@ def create_hidden_audio_html(url, speed, text):
 
                 if (btnOriginal) {{
                     btnOriginal.textContent = text;
-                    if (text === 'Speak') {{
-                        btnOriginal.className = "lg primary svelte-cmf5ev";
-                    }} else {{
-                        btnOriginal.className = "lg secondary svelte-cmf5ev";
-                    }}
+                    // Don't set className - keep it hidden
+                    btnOriginal.classList.add("kokoro-hidden-original");
+
+                    //if (text === 'Speak') {{
+                    //    btnOriginal.className = "lg primary svelte-cmf5ev";
+                    //}} else {{
+                    //    btnOriginal.className = "lg secondary svelte-cmf5ev";
+                    //}}
                 }}
 
                 setTimeout(() => {{
@@ -94,16 +123,21 @@ def create_hidden_audio_html(url, speed, text):
 
                     if (audio.paused || audio.ended) {{
                         if (audio.ended) audio.currentTime = 0;
-                        audio.play();
-                        forceButtonUpdate('Pause');
-                        setSpeakButtonEnabled(true);
-                        console.log("KokoroTTS ({abbrev}_toggle): Playing audio");
+                        audio.play().then(() => {{
+                            forceButtonUpdate('Pause');
+                            setSpeakButtonEnabled(true);
+                            {info_log}("KokoroTTS ({abbrev}_toggle): Playing audio");
+                        }}).catch(e => {{
+                            {error_log}("KokoroTTS ({abbrev}_toggle): Audio play failed:", e);
+                        }});
                     }} else {{
                         audio.pause();
                         forceButtonUpdate('Speak');
                         setSpeakButtonEnabled(true);
-                        console.log("KokoroTTS ({abbrev}_toggle): Pausing audio");
+                        {info_log}("KokoroTTS ({abbrev}_toggle): Pausing audio");
                     }}
+                }} else {{
+                    {error_log}("KokoroTTS ({abbrev}_toggle): Audio element not found");
                 }}
             }};
 
@@ -113,8 +147,12 @@ def create_hidden_audio_html(url, speed, text):
                 if (existingAudios.length > 1) {{
                     // Remove all but the last one (newest)
                     for (var i = 0; i < existingAudios.length - 1; i++) {{
-                        existingAudios[i].remove();
-                        console.log("KokoroTTS ({abbrev}): Removed old audio element");
+                        try {{
+                            existingAudios[i].remove();
+                            {info_log}("KokoroTTS ({abbrev}): Removed old audio element");
+                        }} catch(e) {{
+                            {error_log}("KokoroTTS ({abbrev}): Error removing old audio element:", e);
+                        }}
                     }}
                 }}
 
@@ -125,42 +163,53 @@ def create_hidden_audio_html(url, speed, text):
                     audio.addEventListener('playing', function() {{
                         forceButtonUpdate('Pause');
                         setSpeakButtonEnabled(true);
-                        console.log("KokoroTTS ({abbrev}): Audio playing - button set to Pause");
+                        {info_log}("KokoroTTS ({abbrev}): Audio playing - button set to Pause");
                     }});
 
                     audio.addEventListener('pause', function() {{
                         forceButtonUpdate('Speak');
-                        console.log("KokoroTTS ({abbrev}): Audio paused - button set to Speak");
+                        {info_log}("KokoroTTS ({abbrev}): Audio paused - button set to Speak");
                     }});
 
                     audio.addEventListener('ended', function() {{
                         forceButtonUpdate('Speak');
-                        console.log("KokoroTTS ({abbrev}): Audio ended - button set to Speak");
+                        {info_log}("KokoroTTS ({abbrev}): Audio ended - button set to Speak");
                     }});
 
-                    console.log("KokoroTTS ({abbrev}): Audio component fully initialized");
+                    audio.addEventListener('error', function(e) {{
+                        {error_log}("KokoroTTS ({abbrev}): Audio error:", e);
+                        forceButtonUpdate('Speak');
+                        setSpeakButtonEnabled(false);
+                    }});
+
+                    {info_log}("KokoroTTS ({abbrev}): Audio component fully initialized");
 
                     // Check if audio is already playing (autoplay detection)
                     setTimeout(() => {{
                         if (audio && !audio.paused && !audio.ended) {{
-                            setSpeakButtonEnabled(true, 'Pause');  // Enable with correct text immediately
-                            console.log("KokoroTTS ({abbrev}): Detected autoplay, enabled as Pause");
+                            setSpeakButtonEnabled(true, 'Pause');
+                            {info_log}("KokoroTTS ({abbrev}): Detected autoplay, enabled as Pause");
                         }} else {{
-                            setSpeakButtonEnabled(true, 'Speak');  // Enable with Speak text
+                            setSpeakButtonEnabled(true, 'Speak');
                         }}
                     }}, 500);
 
-                    // Check if audio is already playing (autoplay detection)
                     setTimeout(() => {{
                         if (audio && !audio.paused && !audio.ended) {{
                             forceButtonUpdate('Pause');
-                            console.log("KokoroTTS ({abbrev}): Detected autoplay, set button to Pause");
+                            {info_log}("KokoroTTS ({abbrev}): Detected autoplay, set button to Pause");
                         }}
                     }}, 500);
+                }} else if (!audio) {{
+                    {error_log}("KokoroTTS ({abbrev}): Audio element not found during initialization");
                 }}
             }}
 
-            initializeAudioComponent();
+            try {{
+                initializeAudioComponent();
+            }} catch(e) {{
+                {error_log}("KokoroTTS ({abbrev}): Error during audio component initialization:", e);
+            }}
         </script>
     </div>
     """
@@ -170,32 +219,54 @@ def create_hidden_audio_html(url, speed, text):
 
 def create_button_cloning_js(abbrev):
     """Reusable button cloning functionality"""
+    info_log, error_log = get_console_log_prefix()
+
     result = f"""
     function cloneKokoroButtons() {{
-        var originalBtn = document.getElementById("kokoro-audio-control");
-        var generateBtn = document.getElementById("Generate");
+        try {{
+            var originalBtn = document.getElementById("kokoro-audio-control");
+            var generateBtn = document.getElementById("Generate");
 
-        if (originalBtn && generateBtn && !document.getElementById("kokoro-audio-control-clone")) {{
-            var clonedBtn = originalBtn.cloneNode(true);
-            clonedBtn.id = "kokoro-audio-control-clone";
+            if (originalBtn && generateBtn && !document.getElementById("kokoro-audio-control-clone")) {{
+                var clonedBtn = originalBtn.cloneNode(true);
+                clonedBtn.id = "kokoro-audio-control-clone";
 
-            clonedBtn.classList.remove("kokoro-hidden-original");
+                // Hide the original and show the clone
+                originalBtn.classList.add("kokoro-hidden-original");
+                clonedBtn.classList.remove("kokoro-hidden-original");
 
-            generateBtn.insertAdjacentElement("afterend", clonedBtn);
-            clonedBtn.style.setProperty("margin-left", "-10px");
+                generateBtn.insertAdjacentElement("afterend", clonedBtn);
+                clonedBtn.style.setProperty("margin-left", "-10px");
 
-            // Force clone to correct initial state regardless of original
-            clonedBtn.disabled = true;
-            clonedBtn.style.opacity = "0.5";
-            clonedBtn.textContent = "Speak";
+                // Force clone to correct initial state regardless of original
+                clonedBtn.disabled = true;
+                clonedBtn.style.opacity = "0.5";
+                clonedBtn.textContent = "Speak";
 
-            [clonedBtn, originalBtn].forEach(btn => {{
-                btn.addEventListener("click", function() {{
-                    if (window.kokoroToggleAudio) window.kokoroToggleAudio();
+                [clonedBtn, originalBtn].forEach(btn => {{
+                    btn.addEventListener("click", function() {{
+                        if (window.kokoroToggleAudio) {{
+                            window.kokoroToggleAudio();
+                        }} else {{
+                            {error_log}("KokoroTTS ({abbrev}): kokoroToggleAudio function not found");
+                        }}
+                    }});
                 }});
-            }});
 
-            console.log("KokoroTTS ({abbrev}): Button cloned");
+                {info_log}("KokoroTTS ({abbrev}): Button cloned successfully");
+            }} else {{
+                if (!originalBtn) {{
+                    {error_log}("KokoroTTS ({abbrev}): Original button not found for cloning");
+                }}
+                if (!generateBtn) {{
+                    {error_log}("KokoroTTS ({abbrev}): Generate button not found for cloning");
+                }}
+                if (document.getElementById("kokoro-audio-control-clone")) {{
+                    {info_log}("KokoroTTS ({abbrev}): Button already cloned, skipping");
+                }}
+            }}
+        }} catch(e) {{
+            {error_log}("KokoroTTS ({abbrev}): Error in cloneKokoroButtons:", e);
         }}
     }}
     """
@@ -205,56 +276,74 @@ def create_button_cloning_js(abbrev):
 def create_hidden_audio_js():
     """Generic utility to enable HTML components with embedded scripts"""
     abbrev = "chaj"
+    info_log, error_log = get_console_log_prefix()
+
+    # Use the refactored button cloning function
     button_cloning_js = create_button_cloning_js(abbrev)
+
     css_rule = '.kokoro-hidden-original { display: none !important; }'
     result = f"""
-    console.log("KokoroTTS ({abbrev}): Script execution utility loaded");
+    {info_log}("KokoroTTS ({abbrev}): Script execution utility loaded");
 
     // Inject CSS
-    var style = document.createElement('style');
-    style.textContent = '{css_rule}';
-    document.head.appendChild(style);
-
+    try {{
+        var style = document.createElement('style');
+        style.textContent = '{css_rule}';
+        document.head.appendChild(style);
+    }} catch(e) {{
+        {error_log}("KokoroTTS ({abbrev}): Error injecting CSS:", e);
+    }}
 
     // Generic script executor for any HTML component
     function executeEmbeddedScripts() {{
-        var containers = document.querySelectorAll('[id*="kokoro-"]');
-        containers.forEach(function(container) {{
-            if (!container.scriptsExecuted) {{
-                container.scriptsExecuted = true;
-                var scripts = container.getElementsByTagName('script');
-                for (var i = 0; i < scripts.length; i++) {{
-                    if (scripts[i].innerHTML) {{
-                        console.log("KokoroTTS ({abbrev}): Executing embedded script");
-                        eval(scripts[i].innerHTML);
+        try {{
+            var containers = document.querySelectorAll('[id*="kokoro-"]');
+            containers.forEach(function(container) {{
+                if (!container.scriptsExecuted) {{
+                    container.scriptsExecuted = true;
+                    var scripts = container.getElementsByTagName('script');
+                    for (var i = 0; i < scripts.length; i++) {{
+                        if (scripts[i].innerHTML) {{
+                            {info_log}("KokoroTTS ({abbrev}): Executing embedded script");
+                            try {{
+                                eval(scripts[i].innerHTML);
+                            }} catch(scriptError) {{
+                                {error_log}("KokoroTTS ({abbrev}): Script execution error:", scriptError);
+                            }}
+                        }}
                     }}
                 }}
-            }}
-        }});
+            }});
+        }} catch(e) {{
+            {error_log}("KokoroTTS ({abbrev}): Error in executeEmbeddedScripts:", e);
+        }}
     }}
 
     {button_cloning_js}
 
-    // Run utilities
-        // Initialize buttons to disabled state on startup
+    // Initialize buttons to disabled state on startup
     function initializeButtonState() {{
-        var audio = document.getElementById('kokoro-current-audio');
-        if (!audio) {{
-            var btnOriginal = document.getElementById("kokoro-audio-control");
-            var btnClone = document.getElementById("kokoro-audio-control-clone");
-            [btnOriginal, btnClone].forEach(btn => {{
-                if (btn) {{
-                    btn.disabled = true;
-                    btn.style.opacity = "0.5";
-                    btn.textContent = "Speak";
-                }}
-            }});
-            console.log("KokoroTTS ({abbrev}): Set buttons to disabled startup state");
+        try {{
+            var audio = document.getElementById('kokoro-current-audio');
+            if (!audio) {{
+                var btnOriginal = document.getElementById("kokoro-audio-control");
+                var btnClone = document.getElementById("kokoro-audio-control-clone");
+                [btnOriginal, btnClone].forEach(btn => {{
+                    if (btn) {{
+                        btn.disabled = true;
+                        btn.style.opacity = "0.5";
+                        btn.textContent = "Speak";
+                    }}
+                }});
+                {info_log}("KokoroTTS ({abbrev}): Set buttons to disabled startup state");
+            }}
+        }} catch(e) {{
+            {error_log}("KokoroTTS ({abbrev}): Error in initializeButtonState:", e);
         }}
     }}
 
     setInterval(executeEmbeddedScripts, 300);
-    setTimeout(initializeButtonState, 100);  // Set initial state after buttons exist
+    setTimeout(initializeButtonState, 100);
     cloneKokoroButtons();
     """
     return result
