@@ -49,55 +49,6 @@ def get_console_log_prefix():
     else:
         return "//", "console.error"  # Default to errors only
 
-# PITCH CONTROL FUNCTIONS - EXPERIMENTAL
-# These are duplicates of existing functions but will use Web Audio API for pitch control
-
-def create_ai_audio_html_pitch(url, speed, pitch, text):
-    """
-    EXPERIMENTAL: Create audio component with pitch control using Web Audio API.
-    Currently stubbed - falls back to standard method.
-
-    Args:
-        url (str): URL to the audio file
-        speed (float): Playback speed multiplier
-        pitch (float): Pitch multiplier (1.0 = normal)
-        text (str): Text being spoken
-
-    Returns:
-        str: HTML string for pitch-controlled audio component
-    """
-    log(f"STUB: Pitch control requested (speed={speed}, pitch={pitch}) - falling back to standard")
-    return create_hidden_audio_html(url, speed, text)
-
-def create_speaker_button_html_pitch(url, speed, pitch, text):
-    """
-    EXPERIMENTAL: Create preview audio with pitch control using Web Audio API.
-    This will be the first implementation for testing pitch control.
-
-    Args:
-        url (str): URL to the audio file
-        speed (float): Playback speed multiplier
-        pitch (float): Pitch multiplier (1.0 = normal)
-        text (str): Text being spoken
-
-    Returns:
-        str: HTML string for pitch-controlled preview audio
-    """
-    log(f"STUB: Preview pitch control (speed={speed}, pitch={pitch}) - falling back to standard")
-    return create_speaker_button_html(url, speed, text)
-
-def create_ai_audio_js_pitch():
-    """
-    EXPERIMENTAL: JavaScript for pitch-controlled audio components.
-    Currently stubbed - falls back to standard method.
-
-    Returns:
-        str: JavaScript code for pitch control system
-    """
-    log("STUB: Pitch control JS requested - falling back to standard")
-    return create_hidden_audio_js()
-
-
 def create_speaker_button_html(audio_url, speed, text):
     """
     Create auto-playing audio with play/pause toggle button for voice previews.

@@ -302,46 +302,6 @@ def load_settings():
         f"preview_text={default_preview_text[:50]}..., experimental={default_experimental}, "
         f"preprocess_code={default_preprocess_code}, debug_mode={default_debug_mode}, voice={default_voice}")
 
-
-def get_ai_audio_html(url, speed, text):
-    """
-    Branch Audio Player widgets based on the ui setting
-    This is called by output_standard
-
-    Args:
-        audio_url (str): URL to the audio file
-        speed (float): Playback speed multiplier (e.g., 1.0 = normal, 0.5 = half speed)
-        text (str): Text being spoken (for debugging/context, not displayed)
-
-    Returns:
-        str: HTML string containing audio element and speaker button
-    """
-    if getattr(shared.args, 'kokoro_enable_pitch_control', False):
-        pitch = getattr(shared.args, 'kokoro_pitch', 1.0)
-        return makehtml.create_ai_audio_html_pitch(url, speed, pitch, text)
-    else:
-        return makehtml.create_ai_audio_html(url, speed, text)
-
-def get_preview_audio_html(url, speed, text):
-    """
-    Branch Audio Player widgets based on the ui setting
-    This is called by voice_preview
-
-    Args:
-        audio_url (str): URL to the audio file
-        speed (float): Playback speed multiplier (e.g., 1.0 = normal, 0.5 = half speed)
-        text (str): Text being spoken (for debugging/context, not displayed)
-
-    Returns:
-        str: HTML string containing audio element and speaker button
-    """
-
-    if getattr(shared.args, 'kokoro_enable_pitch_control', False):
-        pitch = getattr(shared.args, 'kokoro_pitch', 1.0)
-        return makehtml.create_speaker_button_html_pitch(url, speed, pitch, text)
-    else:
-        return makehtml.create_speaker_button_html(url, speed, text)
-
 def output_modifier(string, state):
     """
     Generate and automatically play TTS audio for AI responses.
@@ -398,6 +358,10 @@ def output_standard(original_string, clean_text):
         str: Original string (audio HTML is stored separately for button access)
     """
     log("=== ENTERING output_standard ===")
+    speed = getattr(shared.args, 'kokoro_speed', 1.0)
+    pitch = getattr(shared.args, 'kokoro_pitch', 1.0)
+    save_setting("speed", speed)
+    save_setting("pitch", pitch)
 
     # Hot-reload makehtml for development
     try:
@@ -414,17 +378,16 @@ def output_standard(original_string, clean_text):
 
     try:
         # Generate audio file
-        msg_id = generate.run(clean_text)
+        msg_id = generate.run(clean_text, pitch=pitch)
         if msg_id is None:
             log("ERROR: generate.run() returned None!")
             return original_string
 
         # Create file URL for web interface
         file_url = f"/file/extensions/{OurName}/audio/{msg_id}.wav"
-        speed = getattr(shared.args, 'kokoro_speed', 1.0)
 
         # Create hidden audio HTML component
-        audio_html = get_ai_audio_html(file_url, speed, clean_text[:50])
+        audio_html = makehtml.create_ai_audio_html(file_url, speed, clean_text[:50])
         log(f"Generated audio HTML: {audio_html[:200]}...")
 
         # Store the audio HTML globally so the button can access it
@@ -450,6 +413,12 @@ def voice_preview(preview_text):
         str: HTML string with preview text and audio controls
     """
     log("Generating voice preview")
+    speed = getattr(shared.args, 'kokoro_speed', 1.0)
+    pitch = getattr(shared.args, 'kokoro_pitch', 1.0)
+    save_setting("speed", speed)
+    save_setting("pitch", pitch)
+
+
     voice_name = getattr(shared.args, 'kokoro_voice', VOICES[0])
     substituted_text = substitute_placeholders(preview_text, voice_name)
 
@@ -466,13 +435,11 @@ def voice_preview(preview_text):
 
     try:
         # Generate preview audio
-        msg_id = generate.run(string_for_tts, preview=True)
+        msg_id = generate.run(string_for_tts, preview=True, pitch=pitch)
         if msg_id:
             file_url = f"/file/extensions/{OurName}/audio/preview.wav"
-            speed = getattr(shared.args, 'kokoro_speed', 1.0)
-
             # Create speaker button with audio controls
-            play_html = get_preview_audio_html(file_url, speed, preview_text)
+            play_html =  makehtml.create_speaker_button_html(file_url, speed, preview_text)
             return f"Preview: {substituted_text} {play_html}"
     except Exception as e:
         log(f"Error generating preview: {e}")
@@ -624,9 +591,9 @@ def ui():
     # Voice selection events
     voice.change(on_voice_change, inputs=[voice, template_state], outputs=[voice, template_state])
 
-    # Speed and pitch control events
-    speed.change(lambda x: save_setting("speed", x), inputs=[speed])
-    pitch.change(lambda x: save_setting("pitch", x), inputs=[pitch])
+    # Speed and pitch control events - doing this in the speak is actually created now
+    # speed.change(lambda x: save_setting("speed", x), inputs=[speed])
+    # pitch.change(lambda x: save_setting("pitch", x), inputs=[pitch])
 
     # Audio control button handler
     def handle_audio_button_click():

@@ -9,11 +9,14 @@ from pydub import AudioSegment
 import pathlib
 from huggingface_hub import snapshot_download
 from modules import shared
+import librosa
 from nltk.tokenize import sent_tokenize
 import nltk
-
 from extensions.KokoroTTS_4_TGUI.src.debug import *
+import time
 
+def early_log(string):
+    print(f"KokoroTTS_4_TGUI DEBUG: {string}")  # Comment out to disable logging
 
 # Add this new function after the imports
 def cleanup_old_audio_files(max_files=10, max_age_hours=24):
@@ -50,6 +53,35 @@ def cleanup_old_audio_files(max_files=10, max_age_hours=24):
 
     except Exception as e:
         log(f"Error in audio cleanup: {e}")
+
+# Add this function to generate.py
+def apply_pitch_shift(audio_data, sample_rate, pitch_factor):
+    """
+    Apply pitch shifting to audio data using librosa.
+
+    Args:
+        audio_data (np.array): Audio samples
+        sample_rate (int): Sample rate (24000 for Kokoro)
+        pitch_factor (float): Pitch multiplier (1.0 = normal, 0.5 = octave down, 2.0 = octave up)
+
+    Returns:
+        np.array: Pitch-shifted audio data
+    """
+    if abs(pitch_factor - 1.0) < 0.01:
+        return audio_data  # No change needed
+
+    # Convert pitch factor to semitones (librosa expects semitones)
+    semitones = 12 * np.log2(pitch_factor)
+
+    # Apply pitch shift
+    shifted = librosa.effects.pitch_shift(
+        y=audio_data,
+        sr=sample_rate,
+        n_steps=semitones,
+        bins_per_octave=12
+    )
+
+    return shifted
 
 
 # Download the Kokoro weights
@@ -91,18 +123,40 @@ nltk.data.path.append(str(nltk_data_dir))
 
 # Function to download NLTK data only if not already present
 def download_nltk_data(resource):
-    try:
-        # Check if the resource is already available
-        nltk.data.find(resource)
-        log(f"{resource} is already downloaded.")
-    except LookupError:
-        # If not found, download the resource
-        log(f"Downloading {resource}...")
+    """Download NLTK data only if the actual files don't exist"""
+    early_log(f"nltk Updater: Checking {resource} ")
+    # Check if files actually exist in our custom directory
+    do_download=False
+    # Simple file existence check
+    if resource == 'punkt':
+        punkt_path = nltk_data_dir / 'tokenizers' / 'punkt'
+        if punkt_path.exists():
+            early_log(f"Found punkt at {punkt_path}")
+            try:
+                nltk.sent_tokenize("Test sentence.")
+                early_log(f"{resource} is working from existing installation")
+            except:
+                 early_log(f"{resource} requires re-installtion")
+                 do_download=True
+
+    elif resource == 'punkt_tab':
+        punkt_tab_path = nltk_data_dir / 'tokenizers' / 'punkt_tab'
+        if punkt_tab_path.exists():
+            early_log(f"Found punkt_tab at {punkt_tab_path}")
+        else:
+            log(f"{resource} not found, will download")
+            do_download = True
+
+    if do_download:
+        early_log(f"Downloading {resource}...")
         nltk.download(resource, download_dir=str(nltk_data_dir))
+        early_log(f"Download complete: {resource}")
+
+
 
 # Download the required resources
 download_nltk_data('punkt')
-download_nltk_data('punkt_tab')
+download_nltk_data('punkt_tab') # Its ok to Skip punkt_tab - it's usually not needed if punkt is available
 
 # Set the environment variables for eSpeak NG on Windows
 if os.name == 'nt':
@@ -137,25 +191,28 @@ def load_voice(voice=None):
 
 
 
-def run(text, output_path=None, preview=False):
-    """Generate audio from text.
+# Modify the run() function to accept pitch parameter
+def run(text, output_path=None, preview=False, pitch=1.0):
+    """Generate audio from text with optional pitch control.
 
     Args:
         text (str): The text to generate audio from.
-        output_path (str, optional): Path to save the audio file. Defaults to audio/{msg_id or preview}.wav.
-        preview (bool, optional): Whether to generate a preview audio. Defaults to False.
+        output_path (str, optional): Path to save the audio file.
+        preview (bool, optional): Whether to generate a preview audio.
+        pitch (float, optional): Pitch multiplier (1.0 = normal pitch).
 
     Returns:
         str: The message ID.
     """
-      # Clean up old files before generating new ones
-    if not preview:  # Don't cleanup during preview generation
+    # Clean up old files before generating new ones
+    if not preview:
         cleanup_old_audio_files()
 
     global MODEL, voicepack
     MODEL = build_model(model_path, device)
     msg_id = str(uuid.uuid4())
     text_chunks = split_text(text)
+
     try:
         segments = generate_audio_chunks(text_chunks)
     except IndexError:
@@ -166,6 +223,26 @@ def run(text, output_path=None, preview=False):
             set_splitting_type()
 
     full_audio = concatenate_audio_segments(segments)
+
+    # Apply pitch shifting if requested
+    if abs(pitch - 1.0) > 0.01:
+        log(f"Applying pitch shift: {pitch}")
+        # Convert AudioSegment to numpy array
+        audio_array = np.array(full_audio.get_array_of_samples(), dtype=np.float32)
+        audio_array = audio_array / np.max(np.abs(audio_array))  # Normalize
+
+        # Apply pitch shift
+        shifted_array = apply_pitch_shift(audio_array, 24000, pitch)
+
+        # Convert back to AudioSegment
+        shifted_array = np.int16(shifted_array * 32767)
+        full_audio = AudioSegment(
+            data=shifted_array.tobytes(),
+            sample_width=2,
+            frame_rate=24000,
+            channels=1
+        )
+
     default_audio_path = pathlib.Path(__file__).parent / '..' / 'audio' / f'{"preview" if preview else msg_id}.wav'
     audio_path = output_path or default_audio_path
     full_audio.export(audio_path, format="wav")
@@ -212,7 +289,7 @@ def split_text(text):
         if current_chunk_len + additional_tokens > max_token and current_text_parts:
             # Create the chunk from what's accumulated so far
             current_text = ' '.join(current_text_parts)
-            tokenized_chunk = tokenize(phonemize(current_text, lang=voice_name[0]))
+            tokenized_chunk = tokenize(phonemize(currlogent_text, lang=voice_name[0]))
             chunks.append(tokenized_chunk)
 
             # Reset trackers
