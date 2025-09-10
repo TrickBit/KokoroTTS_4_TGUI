@@ -10,35 +10,26 @@ import os
 import gradio as gr
 from modules import shared
 
-
-# backend = "pytorch" # OR onnx
-# TODO: Make ONNX the default backend and deprecate PyTorch
-# PyTorch backend limited to English only, ONNX supports multiple languages
-backend = "onnx" # onnx OR pytorch - Consider making this configurable
-
+# ONNX-only backend - PyTorch support removed
 extension_dir = pathlib.Path(__file__).parent
 extension_name = extension_dir.name
 
-setattr(shared.args, f"kokoro_backend", backend)
+setattr(shared.args, f"kokoro_backend", "onnx")
 setattr(shared.args, f"kokoro_homedir", extension_dir)
 setattr(shared.args, f"kokoro_extension_name", extension_name)
 setattr(shared.args, f"kokoro_icon_style", "png")
 
-if backend == "pytorch":
-    generate = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.pytorch.generate')
-    voices_module = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.pytorch.voices')
-    VOICES = voices_module.VOICES
-else:
-    generate = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.generate')
-    voices_module = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.voices')
-    blender = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.blender')
-    VOICES = voices_module.VOICES
+# ONNX backend imports only
+generate = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.generate')
+voices_module = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.voices')
+blender = importlib.import_module('extensions.KokoroTTS_4_TGUI.src.onnx.blender')
+VOICES = voices_module.VOICES
 
 from extensions.KokoroTTS_4_TGUI.src.debug import *
 from extensions.KokoroTTS_4_TGUI.src.splittext import *
 from extensions.KokoroTTS_4_TGUI.src import makehtml
 
-del backend, extension_dir, extension_name
+del extension_dir, extension_name
 
 
 def input_modifier(string, state):
@@ -129,29 +120,6 @@ def save_preview_text(text):
     save_setting("preview_text", text)
     return text
 
-# EXPERIMENTAL MODE FEATURES - CURRENTLY DISABLED
-# These functions are stubbed out for future development
-
-def on_experimental_mode_change(is_enabled):
-    """
-    Handle changes to the experimental mode setting.
-
-    Args:
-        is_enabled (bool): Whether experimental mode is enabled
-
-    Returns:
-        str: Status message about the change
-    """
-    # Reload modules for hot-reloading during development
-    makehtml = importlib.reload(importlib.import_module('extensions.KokoroTTS_4_TGUI.src.makehtml'))
-    splittext = importlib.reload(importlib.import_module('extensions.KokoroTTS_4_TGUI.src.splittext'))
-    backend = setattr(shared.args, f"kokoro_backend", "pytorch")
-    generate = importlib.reload(importlib.import_module(f"extensions.KokoroTTS_4_TGUI.src.{backend}.generate"))
-
-    log(f"Experimental mode changed: {is_enabled}")
-    save_setting("experimental", is_enabled)
-    return f"{getattr(shared.args, 'kokoro_extension_name')} experimental mode {'enabled' if is_enabled else 'disabled'}."
-
 def output_chunked(original_string, clean_text):
     """
     EXPERIMENTAL: Chunked output mode - generates multiple audio files for streaming playback.
@@ -181,8 +149,6 @@ def simple_chunk_text(text):
     log("Simple chunking called - returning single chunk")
     return [text] if text.strip() else []
 
-# END EXPERIMENTAL FEATURES
-
 def load_settings():
     """
     Load settings from settings.yaml or use defaults for first run.
@@ -197,12 +163,12 @@ def load_settings():
         'kokoro_pitch': 1.0,
         'kokoro_voice': VOICES[0] if VOICES else 'bf_emma',
         'kokoro_preview_text': generate_default_preview_text(),
-        'kokoro_language': 'en-us',  # Add this line
+        'kokoro_language': 'en-us',
         'kokoro_experimental': False,
         'kokoro_preprocess_code': False,
         'kokoro_enable_debug': 'errors',
         'kokoro_icon_style': getattr(shared.args, 'kokoro_icon_style'),
-        'kokoro_multi_user_mode': False,  # Kept for future consideration
+        'kokoro_multi_user_mode': False,
         'autoplay': False,  # Legacy compatibility
     }
 
@@ -256,11 +222,7 @@ def load_settings():
     setattr(shared.args, 'kokoro_enable_debug', default_debug_mode)
     setattr(shared.args, 'kokoro_voice', default_voice)
     setattr(shared.args, 'kokoro_icon_style', default_icon_style)
-    # Force English for PyTorch backend (only supports en-us/en-gb)
-    if getattr(shared.args, 'kokoro_backend') == 'pytorch':
-        setattr(shared.args, 'kokoro_language', 'en-us')
-    else:
-        setattr(shared.args, 'kokoro_language', default_language)
+    setattr(shared.args, 'kokoro_language', default_language)
 
     log(f"Settings applied: speed={default_speed}, pitch={default_pitch}, enable_tts={default_enable_tts}, "
         f"preview_text={default_preview_text[:50]}..., experimental={default_experimental}, "
@@ -387,11 +349,9 @@ def voice_preview(preview_text):
     substituted_text = substitute_placeholders(preview_text, voice_name)
 
     # Clean substituted_text for TTS (always use standard [preprocess_code=False] mode for preview)
-    # get the setting for code/markdown preprocessing - here for documentaion only
-    # preprocess_code = getattr(shared.args, 'kokoro_preprocess_code', True)
     preprocess_code = False
     # Clean the substituted_text for TTS processing
-    string_for_tts = clean_text_for_tts(substituted_text, preprocess_code )
+    string_for_tts = clean_text_for_tts(substituted_text, preprocess_code)
     log(f"Cleaned string: '{string_for_tts[:100]}...'")
 
     # Hot-reload makehtml for development
@@ -404,7 +364,7 @@ def voice_preview(preview_text):
             extension_name = getattr(shared.args, 'kokoro_extension_name')
             file_url = f"/file/extensions/{extension_name}/audio/preview.wav"
             # Create speaker button with audio controls
-            play_html =  makehtml.create_speaker_button_html(file_url, speed, preview_text)
+            play_html = makehtml.create_speaker_button_html(file_url, speed, preview_text)
             return f"Preview: {substituted_text} {play_html}"
     except Exception as e:
         log(f"Error generating preview: {e}")
@@ -481,24 +441,7 @@ def substitute_placeholders(text, voice):
 
 def get_voice_display_mapping():
     """Create mapping between display names and actual voice IDs"""
-    backend = getattr(shared.args, 'kokoro_backend', 'pytorch')
-
-    if backend == 'onnx':
-        from extensions.KokoroTTS_4_TGUI.src.onnx.voices import VOICES, get_voice_info
-    else:
-        from extensions.KokoroTTS_4_TGUI.src.pytorch.voices import VOICES
-        # Create a simple get_voice_info for pytorch voices
-        def get_voice_info(voice_id):
-            if voice_id.startswith('bf_'):
-                return {'country': 'British', 'gender': 'Female', 'display_name': voice_id[3:].title()}
-            elif voice_id.startswith('af_'):
-                return {'country': 'American', 'gender': 'Female', 'display_name': voice_id[3:].title()}
-            elif voice_id.startswith('bm_'):
-                return {'country': 'British', 'gender': 'Male', 'display_name': voice_id[3:].title()}
-            elif voice_id.startswith('am_'):
-                return {'country': 'American', 'gender': 'Male', 'display_name': voice_id[3:].title()}
-            else:
-                return {'country': 'Unknown', 'gender': 'Unknown', 'display_name': voice_id.title()}
+    from extensions.KokoroTTS_4_TGUI.src.onnx.voices import VOICES, get_voice_info
 
     display_mapping = {}
 
@@ -632,10 +575,10 @@ def ui():
         "Blended voices combine multiple voice characteristics."
     )
 
+    kokoro_title = f"{getattr(shared.args, 'kokoro_extension_name')} - ONNX Backend"
 
-    kokoro_title = f"{getattr(shared.args, 'kokoro_extension_name')}         <using {getattr(shared.args, 'kokoro_backend')} backend>"
     # Create the main UI accordion
-    with gr.Accordion(f"{kokoro_title }"):
+    with gr.Accordion(f"{kokoro_title}"):
         # Audio control section
         with gr.Row():
             # Hidden audio div for main playback
@@ -662,7 +605,7 @@ def ui():
             interactive=True
         )
 
-        # Language selection for pronunciation
+        # Language selection for pronunciation (ONNX-only feature)
         language_dropdown = gr.Dropdown(
             choices=[
                 ("English (US)", "en-us"),
@@ -674,10 +617,10 @@ def ui():
                 ("Chinese", "zh"),
                 ("Hindi", "hi")
             ],
-            value=default_language,  # Use the loaded default
+            value=default_language,
             label="Pronunciation Language",
-            info="Language for phonemization - voices will speak English with this accent/pronunciation" if getattr(shared.args, 'kokoro_backend') == 'onnx' else "Feature only available with ONNX backend",
-            interactive=getattr(shared.args, 'kokoro_backend') == 'onnx'  # Only interactive for ONNX
+            info="Language for phonemization - voices will speak English with this accent/pronunciation",
+            interactive=True
         )
 
         template_state = gr.State(value=default_preview_text)
@@ -750,16 +693,6 @@ def ui():
             interactive=True
         )
 
-        # EXPERIMENTAL MODE - CURRENTLY COMMENTED OUT
-        # Uncomment these lines when experimental features are ready
-        #
-        # experimental_mode = gr.Checkbox(
-        #     label="Enable experimental mode (chunked playback)",
-        #     value=default_experimental,
-        #     info="Experimental chunked audio for more responsive playback",
-        #     interactive=True
-        # )
-
         # Status textbox for feedback
         status_textbox = gr.Textbox(label="Status", interactive=False)
 
@@ -820,15 +753,8 @@ def ui():
     splitting_method.change(generate.set_splitting_type, inputs=[splitting_method])
     preprocess_code.change(lambda x: save_setting("preprocess_code", x), inputs=[preprocess_code])
     debug_mode.change(lambda x: save_setting("enable_debug", x), inputs=[debug_mode])
-    # Only enable language change handler for ONNX backend
-    if getattr(shared.args, 'kokoro_backend') == 'onnx':
-        language_dropdown.change(lambda x: save_setting("language", x), inputs=[language_dropdown])
-
-
-    # EXPERIMENTAL MODE HANDLERS - CURRENTLY COMMENTED OUT
-    # Uncomment when experimental features are ready
-    #
-    # experimental_mode.change(on_experimental_mode_change, inputs=[experimental_mode], outputs=[status_textbox])
+    # Language change handler for ONNX backend
+    language_dropdown.change(lambda x: save_setting("language", x), inputs=[language_dropdown])
 
     # Auto-load stored audio when AI responds
     def load_stored_audio():
@@ -860,8 +786,7 @@ def ui():
         log("Warning: shared.gradio['display'] not available for chaining")
 
     # Voice Blending Section (ONNX only)
-    if getattr(shared.args, 'kokoro_backend') == 'onnx':
-        blender.create_blending_ui(sorted_display_names)
+    blender.create_blending_ui(sorted_display_names)
 
 def custom_js():
     """

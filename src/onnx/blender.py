@@ -96,8 +96,8 @@ def load_saved_blends():
 
 def create_blending_ui(sorted_display_names):
     """Create the voice blending UI accordion with working preview"""
-
-    with gr.Accordion("Voice Blending (Experimental)", open=False):
+    voice_blending_title = f"{getattr(shared.args, 'kokoro_extension_name')} - Voice Blending "
+    with gr.Accordion(f"{voice_blending_title}", open=False):
         gr.Markdown("Create custom voices by blending characteristics from multiple speakers.")
 
         with gr.Row():
