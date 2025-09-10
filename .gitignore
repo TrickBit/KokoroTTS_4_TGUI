@@ -1,0 +1,13 @@
+__pycache__
+nltk_data/
+src/__pycache__
+audio/*.wav
+venv/
+src/pytorch/models--hexgrad--Kokoro-82M/
+src/pytorch/models--hexgrad--Kokoro-82M/audio
+src/.locks
+src/pytorch/.locks
+kokoro-v1.0.onnx
+voices-v1.0.bin
+settings.yaml
+tree.txt
