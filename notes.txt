@@ -1,0 +1,71 @@
+
+
+
+
+
+
+'''
+Note for next session
+
+we will have to do same for aall the others - generate - for instance
+have no code in any file auto execute untill we tell it to
+bit more complex but maybe cleaner ??
+'''
+
+
+
+ok - this is me attmpting to get my head around this
+
+bear with me - I will probably stuff it up
+
+kshared and debug are closeley coupled - somehow we need to have these work
+
+
+so as I understand it - debug has a way to work that wont fail if ksettings isnt active
+
+somehow we HAVE ti init these two first
+
+
+KokoroTTS_4_TGUI Dependency Tree
+├── script.py (UI Layer - TGUI entry point)
+│   ├── → modules.shared (TGUI global)
+│   ├── → kshared (for ksettings) - depends : debug
+│   ├── → trickbit (core business logic) depends : kshared, debug, splittext, makehtml, onnx.generate ...etc
+│   ├── → makehtml (HTML generation)
+│   └── → onnx.blender (voice blending UI)
+│
+
+
+
+
+
+
+You can check the current working directory or the module's name to determine if you're running in a plugin or standalone context. Based on that, you can adjust the import path accordingly.
+
+import sys
+
+# Determine the execution context
+if 'extensions' in sys.modules:
+    # Running as a plugin
+    from extensions.KokoroTTS_4_TGUI.src.kshared import shared
+else:
+    # Running standalone
+    from src.kshared import shared
+
+
+in standalone mode we need extensions.KokoroTTS_4_TGUI to map to .
+
+we need to put test harness in "path to "/text-generation-webui/extensions/KokoroTTS_4_TGUI
+
+
+if we manipulate the imports to change from
+
+from extensions.KokoroTTS_4_TGUI.src.debug import *
+from extensions.KokoroTTS_4_TGUI.src.splittext import *
+from extensions.KokoroTTS_4_TGUI.src import makehtml
+
+to
+
+from src.debug import *
+from src.splittext import *
+from src import makehtml

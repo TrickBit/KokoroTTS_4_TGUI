@@ -1,6 +1,7 @@
 __pycache__
 nltk_data/
 src/__pycache__
+src/onnx/test/
 audio/*.wav
 venv/
 src/pytorch/models--hexgrad--Kokoro-82M/

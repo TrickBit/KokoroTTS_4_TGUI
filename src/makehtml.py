@@ -18,27 +18,48 @@ Architecture:
 - create_speaker_button_html() handles preview audio with play/pause buttons
 """
 
+def adjust_tgui_path():
+    """
+    Adjust sys.path to include the TGUI root directory (containing 'extensions/' and 'modules/').
+    Call this before any imports to ensure consistent import paths in TGUI or standalone mode.
+    """
+    import os
+    import sys
+    start_dir = os.path.dirname(os.path.abspath(__file__))
+    current = start_dir
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        if (os.path.exists(os.path.join(current, 'extensions')) and
+            os.path.exists(os.path.join(current, 'modules'))):
+            if current not in sys.path:
+                sys.path.insert(0, current)  # Prepend to prioritize
+            return
+        current = os.path.dirname(current)
+    raise RuntimeError("Could not find TGUI root containing both 'extensions/' and 'modules/'")
+
+# Call before any extension imports
+adjust_tgui_path()
+
 import time
 import re
 import html
-from modules import shared
-from extensions.KokoroTTS_4_TGUI.src.debug import *
+from extensions.KokoroTTS_4_TGUI.src.kshared import ksettings
+from extensions.KokoroTTS_4_TGUI.src.debug import error_log, info_log, debug_log
+
 
 def get_console_log_prefix():
     """
-    Get the appropriate console logging prefix based on debug setting.
-
-    Returns:
-        tuple: (info_log_prefix, error_log_prefix) for JavaScript console logging
-               info_log_prefix: "console.log" or "//" based on debug level
-               error_log_prefix: "console.error" or "//" based on debug level
+    Purpose: Get appropriate console logging prefixes based on debug setting
+    Pre: Shared namespace accessible with debug settings
+    Post: None
+    Args: None
+    Returns: tuple - (info_log_prefix, error_log_prefix) for JavaScript console logging
 
     Debug levels:
         'off' or False: No logging at all
         'errors' or True: Only error logging
         'all': Full logging (info + errors)
     """
-    debug_setting = getattr(shared.args, 'kokoro_enable_debug', 'errors')
+    debug_setting = ksettings.get('enable_debug', 'errors')
 
     if debug_setting == 'off' or debug_setting is False:
         return "//", "//"  # Both info and error disabled
@@ -48,6 +69,49 @@ def get_console_log_prefix():
         return "console.log", "console.error"  # Both enabled
     else:
         return "//", "console.error"  # Default to errors only
+
+
+def escape_for_js_html(html_string):
+    """
+    Purpose: Safely escape HTML strings for use within JavaScript string literals
+    Pre: Valid HTML string provided
+    Post: String escaped for safe JavaScript embedding
+    Args: html_string (str) - HTML content to escape
+    Returns: str - JavaScript-safe escaped string
+    """
+    if not html_string:
+        return ""
+
+    return (html_string
+            .replace('\\', '\\\\')  # Escape backslashes first
+            .replace("'", "\\'")    # Escape single quotes
+            .replace('"', '\\"')    # Escape double quotes
+            .replace('\n', '\\n')   # Escape newlines
+            .replace('\r', '\\r')   # Escape carriage returns
+            .replace('\t', '\\t'))  # Escape tabs
+
+
+def validate_speed_parameter(speed):
+    """
+    Purpose: Validate and sanitize speed parameter for safe HTML/JS embedding
+    Pre: Speed parameter of any type provided
+    Post: Safe numeric speed value returned within reasonable bounds
+    Args: speed - Speed value to validate (any type)
+    Returns: float - Validated speed value between 0.1 and 3.0
+    """
+    try:
+        speed_float = float(speed)
+        # Clamp to reasonable range
+        if speed_float < 0.1:
+            return 0.1
+        elif speed_float > 3.0:
+            return 3.0
+        else:
+            return speed_float
+    except (ValueError, TypeError):
+        info_log(f"Invalid speed parameter: {speed}, using default 1.0")
+        return 1.0
+
 
 def create_speaker_button_html(audio_url, speed, text):
     """
@@ -73,15 +137,16 @@ def create_speaker_button_html(audio_url, speed, text):
         - Inline event handlers (Gradio compatible)
     """
     timestamp = int(time.time() * 1000)
-    icon_style = getattr(shared.args, 'kokoro_icon_style', 'emoji')
+    icon_style = ksettings.get('icon_style', 'emoji')
 
     # Define icons based on style preference
     if icon_style == "png":
         play_icon = '<img src="/file/extensions/KokoroTTS_4_TGUI/images/play.png" width="50" height="50" style="vertical-align: middle;">'
         pause_icon = '<img src="/file/extensions/KokoroTTS_4_TGUI/images/pause.png" width="50" height="50" style="vertical-align: middle;">'
-    else:  # emoji default
-        play_icon = "🔊"
-        pause_icon = "⏸️"
+    else:  # emoji default - use safer Unicode
+        play_icon = "&#x1F50A;"  # 🔊 as HTML entity
+        pause_icon = "&#x23F8;"  # ⏸ as HTML entity
+
 
     # Escape icons for safe inline JavaScript usage
     play_icon_escaped = play_icon.replace('"', '&quot;').replace("'", "&#39;")
@@ -103,40 +168,44 @@ def create_speaker_button_html(audio_url, speed, text):
     </button>
     """
 
-# MAIN ENTRY POINTS - Used by script.py
 
 def create_ai_audio_html(url, speed, text):
     """
-    Create the main audio component for AI responses.
-    This is the primary entry point called by script.py for main TTS output.
+    Purpose: Create the main audio component for AI responses
+    Pre: Valid URL, speed, and text parameters provided
+    Post: HTML audio component created for main TTS output
+    Args: url (str) - URL to the audio file
+          speed (float) - Playback speed multiplier
+          text (str) - Text being spoken (for context)
+    Returns: str - HTML string for audio component
 
-    Args:
-        url (str): URL to the audio file
-        speed (float): Playback speed multiplier
-        text (str): Text being spoken (for context)
-
-    Returns:
-        str: HTML string for audio component
+    Note: This is the primary entry point called by script.py for main TTS output
     """
     return create_hidden_audio_html(url, speed, text)
 
+
 def create_ai_audio_js():
     """
-    Create the main JavaScript utility for enabling audio components.
-    This is the primary entry point called by script.py's custom_js() function.
+    Purpose: Create the main JavaScript utility for enabling audio components
+    Pre: None
+    Post: JavaScript code generated for audio component management
+    Args: None
+    Returns: str - JavaScript code for audio component management
 
-    Returns:
-        str: JavaScript code for audio component management
+    Note: This is the primary entry point called by script.py's custom_js() function
     """
     return create_hidden_audio_js()
 
-# HIDDEN AUDIO SYSTEM - Main implementation
 
 def create_hidden_audio_html(url, speed, text):
     """
-    Complete self-contained audio component with all logic embedded inline.
-    This creates a hidden div containing an audio element and all necessary
-    JavaScript for managing playback state and button synchronization.
+    Purpose: Complete self-contained audio component with all logic embedded inline
+    Pre: Valid URL, speed, and text parameters provided
+    Post: Hidden div created with audio element and embedded JavaScript
+    Args: url (str) - URL to the audio file
+          speed (float) - Playback speed multiplier
+          text (str) - Text being spoken (for debugging context)
+    Returns: str - HTML string with hidden div containing audio and JavaScript
 
     This is the core audio component that handles the main TTS output from AI responses.
     It uses a hidden div approach with embedded JavaScript that gets executed by
@@ -149,6 +218,7 @@ def create_hidden_audio_html(url, speed, text):
         - Synchronization between original and cloned buttons
         - Error handling and logging
         - Original button stays hidden while clone is visible
+        - XSS protection through parameter validation
 
     Architecture:
         The embedded JavaScript defines functions that:
@@ -156,29 +226,25 @@ def create_hidden_audio_html(url, speed, text):
         2. Handle audio playback (kokoroToggleAudio - global function)
         3. Initialize audio component and event listeners
         4. Clean up old audio elements to prevent conflicts
-
-    Args:
-        url (str): URL to the audio file
-        speed (float): Playback speed multiplier
-        text (str): Text being spoken (for debugging context)
-
-    Returns:
-        str: HTML string with hidden div containing audio and JavaScript
     """
+    # Validate and sanitize inputs
+    validated_speed = validate_speed_parameter(speed)
+    safe_url = html.escape(str(url))
+
     abbrev = "chah"  # Abbreviation for logging identification
     timestamp = int(time.time() * 1000)
-    ts_url = f"{url}?t={timestamp}"  # Add timestamp to prevent caching
+    ts_url = f"{safe_url}?t={timestamp}"  # Add timestamp to prevent caching
 
     # Get logging prefixes based on current debug settings
-    info_log, error_log = get_console_log_prefix()
+    info_log_prefix, error_log_prefix = get_console_log_prefix()
 
     result = f"""
     <div id="kokoro-hidden-audio" style="display: none;">
-        <audio id="kokoro-current-audio" preload="auto" autoplay onloadeddata="this.playbackRate={speed};">
+        <audio id="kokoro-current-audio" preload="auto" autoplay onloadeddata="this.playbackRate={validated_speed};">
             <source src="{ts_url}" type="audio/wav">
         </audio>
         <script>
-            {info_log}("KokoroTTS ({abbrev}): Embedded audio component loaded");
+            {info_log_prefix}("KokoroTTS ({abbrev}): Embedded audio component loaded");
 
             /**
              * Enable/disable speak buttons and set their initial state.
@@ -219,7 +285,7 @@ def create_hidden_audio_html(url, speed, text):
                     btnOriginal.classList.add("kokoro-hidden-original");
                 }}
 
-                {info_log}("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled);
+                {info_log_prefix}("KokoroTTS ({abbrev}_setBtn): Button enabled:", enabled);
             }}
 
             /**
@@ -289,19 +355,19 @@ def create_hidden_audio_html(url, speed, text):
                         audio.play().then(() => {{
                             forceButtonUpdate('Pause');
                             setSpeakButtonEnabled(true);
-                            {info_log}("KokoroTTS ({abbrev}_toggle): Playing audio");
+                            {info_log_prefix}("KokoroTTS ({abbrev}_toggle): Playing audio");
                         }}).catch(e => {{
-                            {error_log}("KokoroTTS ({abbrev}_toggle): Audio play failed:", e);
+                            {error_log_prefix}("KokoroTTS ({abbrev}_toggle): Audio play failed:", e);
                         }});
                     }} else {{
                         // Pause playback
                         audio.pause();
                         forceButtonUpdate('Speak');
                         setSpeakButtonEnabled(true);
-                        {info_log}("KokoroTTS ({abbrev}_toggle): Pausing audio");
+                        {info_log_prefix}("KokoroTTS ({abbrev}_toggle): Pausing audio");
                     }}
                 }} else {{
-                    {error_log}("KokoroTTS ({abbrev}_toggle): Audio element not found");
+                    {error_log_prefix}("KokoroTTS ({abbrev}_toggle): Audio element not found");
                 }}
             }};
 
@@ -324,9 +390,9 @@ def create_hidden_audio_html(url, speed, text):
                     for (var i = 0; i < existingAudios.length - 1; i++) {{
                         try {{
                             existingAudios[i].remove();
-                            {info_log}("KokoroTTS ({abbrev}): Removed old audio element");
+                            {info_log_prefix}("KokoroTTS ({abbrev}): Removed old audio element");
                         }} catch(e) {{
-                            {error_log}("KokoroTTS ({abbrev}): Error removing old audio element:", e);
+                            {error_log_prefix}("KokoroTTS ({abbrev}): Error removing old audio element:", e);
                         }}
                     }}
                 }}
@@ -339,33 +405,33 @@ def create_hidden_audio_html(url, speed, text):
                     audio.addEventListener('playing', function() {{
                         forceButtonUpdate('Pause');
                         setSpeakButtonEnabled(true);
-                        {info_log}("KokoroTTS ({abbrev}): Audio playing - button set to Pause");
+                        {info_log_prefix}("KokoroTTS ({abbrev}): Audio playing - button set to Pause");
                     }});
 
                     audio.addEventListener('pause', function() {{
                         forceButtonUpdate('Speak');
-                        {info_log}("KokoroTTS ({abbrev}): Audio paused - button set to Speak");
+                        {info_log_prefix}("KokoroTTS ({abbrev}): Audio paused - button set to Speak");
                     }});
 
                     audio.addEventListener('ended', function() {{
                         forceButtonUpdate('Speak');
-                        {info_log}("KokoroTTS ({abbrev}): Audio ended - button set to Speak");
+                        {info_log_prefix}("KokoroTTS ({abbrev}): Audio ended - button set to Speak");
                     }});
 
                     audio.addEventListener('error', function(e) {{
-                        {error_log}("KokoroTTS ({abbrev}): Audio error:", e);
+                        {error_log_prefix}("KokoroTTS ({abbrev}): Audio error:", e);
                         forceButtonUpdate('Speak');
                         setSpeakButtonEnabled(false);
                     }});
 
-                    {info_log}("KokoroTTS ({abbrev}): Audio component fully initialized");
+                    {info_log_prefix}("KokoroTTS ({abbrev}): Audio component fully initialized");
 
                     // Check if audio is already playing (autoplay detection)
                     // Use delayed checks to ensure audio has time to start
                     setTimeout(() => {{
                         if (audio && !audio.paused && !audio.ended) {{
                             setSpeakButtonEnabled(true, 'Pause');
-                            {info_log}("KokoroTTS ({abbrev}): Detected autoplay, enabled as Pause");
+                            {info_log_prefix}("KokoroTTS ({abbrev}): Detected autoplay, enabled as Pause");
                         }} else {{
                             setSpeakButtonEnabled(true, 'Speak');
                         }}
@@ -374,11 +440,11 @@ def create_hidden_audio_html(url, speed, text):
                     setTimeout(() => {{
                         if (audio && !audio.paused && !audio.ended) {{
                             forceButtonUpdate('Pause');
-                            {info_log}("KokoroTTS ({abbrev}): Detected autoplay, set button to Pause");
+                            {info_log_prefix}("KokoroTTS ({abbrev}): Detected autoplay, set button to Pause");
                         }}
                     }}, 500);
                 }} else if (!audio) {{
-                    {error_log}("KokoroTTS ({abbrev}): Audio element not found during initialization");
+                    {error_log_prefix}("KokoroTTS ({abbrev}): Audio element not found during initialization");
                 }}
             }}
 
@@ -386,7 +452,7 @@ def create_hidden_audio_html(url, speed, text):
             try {{
                 initializeAudioComponent();
             }} catch(e) {{
-                {error_log}("KokoroTTS ({abbrev}): Error during audio component initialization:", e);
+                {error_log_prefix}("KokoroTTS ({abbrev}): Error during audio component initialization:", e);
             }}
         </script>
     </div>
@@ -394,9 +460,14 @@ def create_hidden_audio_html(url, speed, text):
 
     return result
 
+
 def create_button_cloning_js(abbrev):
     """
-    Reusable button cloning functionality with proper error handling.
+    Purpose: Reusable button cloning functionality with proper error handling
+    Pre: Valid abbreviation string for logging provided
+    Post: JavaScript code generated for button cloning system
+    Args: abbrev (str) - Abbreviation for logging identification
+    Returns: str - JavaScript code for button cloning functionality
 
     Creates a clone of the original audio control button and positions it
     next to the Generate button for better UX. The original button stays
@@ -406,12 +477,6 @@ def create_button_cloning_js(abbrev):
     button cloning system that allows the audio controls to appear
     next to the Generate button instead of in the KokoroTTS accordion.
 
-    Args:
-        abbrev (str): Abbreviation for logging identification
-
-    Returns:
-        str: JavaScript code for button cloning functionality
-
     Features:
         - Clones original button and positions next to Generate button
         - Hides original, shows clone
@@ -419,7 +484,7 @@ def create_button_cloning_js(abbrev):
         - Handles missing elements gracefully
         - Prevents duplicate cloning
     """
-    info_log, error_log = get_console_log_prefix()
+    info_log_prefix, error_log_prefix = get_console_log_prefix()
 
     result = f"""
     /**
@@ -459,34 +524,39 @@ def create_button_cloning_js(abbrev):
                         if (window.kokoroToggleAudio) {{
                             window.kokoroToggleAudio();
                         }} else {{
-                            {error_log}("KokoroTTS ({abbrev}): kokoroToggleAudio function not found");
+                            {error_log_prefix}("KokoroTTS ({abbrev}): kokoroToggleAudio function not found");
                         }}
                     }});
                 }});
 
-                {info_log}("KokoroTTS ({abbrev}): Button cloned successfully");
+                {info_log_prefix}("KokoroTTS ({abbrev}): Button cloned successfully");
             }} else {{
                 // Log specific missing elements for debugging
                 if (!originalBtn) {{
-                    {error_log}("KokoroTTS ({abbrev}): Original button not found for cloning");
+                    {error_log_prefix}("KokoroTTS ({abbrev}): Original button not found for cloning");
                 }}
                 if (!generateBtn) {{
-                    {error_log}("KokoroTTS ({abbrev}): Generate button not found for cloning");
+                    {error_log_prefix}("KokoroTTS ({abbrev}): Generate button not found for cloning");
                 }}
                 if (document.getElementById("kokoro-audio-control-clone")) {{
-                    {info_log}("KokoroTTS ({abbrev}): Button already cloned, skipping");
+                    {info_log_prefix}("KokoroTTS ({abbrev}): Button already cloned, skipping");
                 }}
             }}
         }} catch(e) {{
-            {error_log}("KokoroTTS ({abbrev}): Error in cloneKokoroButtons:", e);
+            {error_log_prefix}("KokoroTTS ({abbrev}): Error in cloneKokoroButtons:", e);
         }}
     }}
     """
     return result
 
+
 def create_hidden_audio_js():
     """
-    Generic utility to enable HTML components with embedded scripts.
+    Purpose: Generic utility to enable HTML components with embedded scripts
+    Pre: None
+    Post: JavaScript utility code generated for audio component management
+    Args: None
+    Returns: str - JavaScript code for complete audio component management system
 
     This is the main JavaScript utility that enables the hidden audio system
     to work within Gradio's constraints. It provides:
@@ -510,15 +580,16 @@ def create_hidden_audio_js():
         str: JavaScript code for complete audio component management system
     """
     abbrev = "chaj"  # Abbreviation for logging identification
-    info_log, error_log = get_console_log_prefix()
+    info_log_prefix, error_log_prefix = get_console_log_prefix()
 
     # Use the refactored button cloning function
     button_cloning_js = create_button_cloning_js(abbrev)
 
+    # Static CSS rule - safe since it's not user-controlled
     css_rule = '.kokoro-hidden-original { display: none !important; }'
 
     result = f"""
-    {info_log}("KokoroTTS ({abbrev}): Script execution utility loaded");
+    {info_log_prefix}("KokoroTTS ({abbrev}): Script execution utility loaded");
 
     // Inject CSS for hiding original elements
     try {{
@@ -526,7 +597,7 @@ def create_hidden_audio_js():
         style.textContent = '{css_rule}';
         document.head.appendChild(style);
     }} catch(e) {{
-        {error_log}("KokoroTTS ({abbrev}): Error injecting CSS:", e);
+        {error_log_prefix}("KokoroTTS ({abbrev}): Error injecting CSS:", e);
     }}
 
     /**
@@ -548,18 +619,18 @@ def create_hidden_audio_js():
                     var scripts = container.getElementsByTagName('script');
                     for (var i = 0; i < scripts.length; i++) {{
                         if (scripts[i].innerHTML) {{
-                            {info_log}("KokoroTTS ({abbrev}): Executing embedded script");
+                            {info_log_prefix}("KokoroTTS ({abbrev}): Executing embedded script");
                             try {{
                                 eval(scripts[i].innerHTML);
                             }} catch(scriptError) {{
-                                {error_log}("KokoroTTS ({abbrev}): Script execution error:", scriptError);
+                                {error_log_prefix}("KokoroTTS ({abbrev}): Script execution error:", scriptError);
                             }}
                         }}
                     }}
                 }}
             }});
         }} catch(e) {{
-            {error_log}("KokoroTTS ({abbrev}): Error in executeEmbeddedScripts:", e);
+            {error_log_prefix}("KokoroTTS ({abbrev}): Error in executeEmbeddedScripts:", e);
         }}
     }}
 
@@ -585,10 +656,10 @@ def create_hidden_audio_js():
                         btn.textContent = "Speak";
                     }}
                 }});
-                {info_log}("KokoroTTS ({abbrev}): Set buttons to disabled startup state");
+                {info_log_prefix}("KokoroTTS ({abbrev}): Set buttons to disabled startup state");
             }}
         }} catch(e) {{
-            {error_log}("KokoroTTS ({abbrev}): Error in initializeButtonState:", e);
+            {error_log_prefix}("KokoroTTS ({abbrev}): Error in initializeButtonState:", e);
         }}
     }}
 

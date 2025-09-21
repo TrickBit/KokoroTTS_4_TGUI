@@ -3,17 +3,56 @@ ONNX Phoneme Processing Module
 
 Ported from pytorch/kokoro.py with PyTorch dependencies removed.
 Handles text normalization, phonemization, and tokenization for ONNX backend.
+All global state moved to kruntime for collision safety.
 """
 
-import phonemizer
+def adjust_tgui_path():
+    """
+    Adjust sys.path to include the TGUI root directory (containing 'extensions/' and 'modules/').
+    Call this before any imports to ensure consistent import paths in TGUI or standalone mode.
+    """
+    import os
+    import sys
+
+    start_dir = os.path.dirname(os.path.abspath(__file__))
+    current = start_dir
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        if (os.path.exists(os.path.join(current, 'extensions')) and
+            os.path.exists(os.path.join(current, 'modules'))):
+            if current not in sys.path:
+                sys.path.insert(0, current)  # Prepend to prioritize
+            return
+        current = os.path.dirname(current)
+    raise RuntimeError("Could not find TGUI root containing both 'extensions/' and 'modules/'")
+
+# Call before any extension imports
+adjust_tgui_path()
+
 import re
 import numpy as np
+import time
 
-def log(message):
-    print(f"KokoroTTS_4_TGUI phoneme DEBUG {message}")
+# Handle phonemizer import gracefully
+try:
+    import phonemizer
+    import phonemizer.backend
+    PHONEMIZER_AVAILABLE = True
+except ImportError:
+    PHONEMIZER_AVAILABLE = False
+
+# Now we can import from extensions with confidence
+from extensions.KokoroTTS_4_TGUI.src.kshared import ksettings, kruntime
+from extensions.KokoroTTS_4_TGUI.src.debug import error_log, info_log, debug_log
+
 
 def split_num(num):
-    """Convert numbers and time formats to spoken text"""
+    """
+    Purpose: Convert numbers and time formats to spoken text
+    Pre: Valid regex match object containing number/time string
+    Post: Number converted to speakable format
+    Args: num (Match) - Regex match object containing number string
+    Returns: str - Spoken format of the number
+    """
     num = num.group()
     if '.' in num:
         return num
@@ -36,8 +75,15 @@ def split_num(num):
             return f'{left} oh {right}{s}'
     return f'{left} {right}{s}'
 
+
 def flip_money(m):
-    """Convert money symbols to spoken text"""
+    """
+    Purpose: Convert money symbols to spoken text
+    Pre: Valid regex match object containing money string
+    Post: Money amount converted to speakable format
+    Args: m (Match) - Regex match object containing money string
+    Returns: str - Spoken format of the money amount
+    """
     m = m.group()
     bill = 'dollar' if m[0] == '$' else 'pound'
     if m[-1].isalpha():
@@ -51,13 +97,27 @@ def flip_money(m):
     coins = f"cent{'' if c == 1 else 's'}" if m[0] == '$' else ('penny' if c == 1 else 'pence')
     return f'{b} {bill}{s} and {c} {coins}'
 
+
 def point_num(num):
-    """Convert decimal numbers to spoken text"""
+    """
+    Purpose: Convert decimal numbers to spoken text
+    Pre: Valid regex match object containing decimal number
+    Post: Decimal converted to speakable format
+    Args: num (Match) - Regex match object containing decimal string
+    Returns: str - Spoken format with "point" separator
+    """
     a, b = num.group().split('.')
     return ' point '.join([a, ' '.join(b)])
 
+
 def normalize_text(text):
-    """Normalize text for TTS processing"""
+    """
+    Purpose: Normalize text for TTS processing with comprehensive replacements
+    Pre: Valid text string
+    Post: Text normalized with proper punctuation, abbreviations, and number handling
+    Args: text (str) - Raw text to normalize
+    Returns: str - Normalized text ready for phonemization
+    """
     text = text.replace(chr(8216), "'").replace(chr(8217), "'")
     text = text.replace('«', chr(8220)).replace('»', chr(8221))
     text = text.replace(chr(8220), '"').replace(chr(8221), '"')
@@ -85,9 +145,16 @@ def normalize_text(text):
     text = re.sub(r'(?i)(?<=[A-Z])\.(?=[A-Z])', '-', text)
     return text.strip()
 
+
 def get_vocab():
-    """Get vocabulary mapping for tokenization - from working kokoro-onnx library"""
-    # Build vocabulary from the working library's exact mapping
+    """
+    Purpose: Get vocabulary mapping for tokenization - extracted from working kokoro-onnx library
+    Pre: None
+    Post: Authoritative vocabulary mapping from kokoro-onnx tokenizer.vocab
+    Args: None
+    Returns: dict - Mapping from phoneme characters to token IDs (exact from working implementation)
+    """
+    # Working vocabulary extracted from kokoro-onnx tokenizer (114 entries)
     vocab_mapping = {
         ';': 1, ':': 2, ',': 3, '.': 4, '!': 5, '?': 6, '—': 9, '…': 10,
         '"': 11, '(': 12, ')': 13, '"': 14, '"': 15, ' ': 16, '̃': 17,
@@ -109,96 +176,180 @@ def get_vocab():
     }
     return vocab_mapping
 
-VOCAB = get_vocab()
+
+def initialize_phonemizers():
+    """
+    Purpose: Initialize phonemizer backends and store in runtime with thread safety
+    Pre: eSpeak NG installed and available
+    Post: Phonemizers loaded and cached in kruntime
+    Args: None
+    Returns: dict - Dictionary of initialized phonemizer backends
+    """
+    # Check if already initialized (thread-safe check)
+    if (kruntime.get('phonemizers_initialized', False) and
+        kruntime.get('phonemizers', {})):
+        return kruntime.get('phonemizers', {})
+
+    info_log("Initializing phonemizers...")
+    phonemizers = {}
+
+    # Check if phonemizer library is available
+    if not PHONEMIZER_AVAILABLE:
+        error_log("phonemizer library not installed - install with: pip install phonemizer")
+        # Create empty phonemizers dict to avoid crashes
+        kruntime.set('phonemizers', {})
+        kruntime.set('vocab_mapping', get_vocab())
+        kruntime.set('phonemizers_initialized', True)
+        return {}
+
+    # Always try to load English (required)
+    try:
+        phonemizers['a'] = phonemizer.backend.EspeakBackend(
+            language='en-us', preserve_punctuation=True, with_stress=True)
+        info_log("Loaded en-us phonemizer")
+    except Exception as e:
+        error_log(f"Failed to load en-us phonemizer: {e}")
+
+    try:
+        phonemizers['b'] = phonemizer.backend.EspeakBackend(
+            language='en-gb', preserve_punctuation=True, with_stress=True)
+        info_log("Loaded en-gb phonemizer")
+    except Exception as e:
+        error_log(f"Failed to load en-gb phonemizer: {e}")
+
+    # Optional language phonemizers (fail gracefully if not available)
+    optional_langs = [
+        ('f', 'fr', 'French'),
+        ('i', 'it', 'Italian'),
+        ('j', 'ja', 'Japanese'),
+        ('p', 'pt', 'Portuguese'),
+        ('z', 'zh', 'Chinese'),
+        ('h', 'hi', 'Hindi')
+    ]
+
+    for code, lang, name in optional_langs:
+        try:
+            phonemizers[code] = phonemizer.backend.EspeakBackend(
+                language=lang, preserve_punctuation=True, with_stress=True)
+            info_log(f"Loaded {name} phonemizer")
+        except Exception as e:
+            debug_log(f"Skipped {name} phonemizer (not installed): {e}")
+
+    # Store in runtime atomically
+    kruntime.set('phonemizers', phonemizers)
+    kruntime.set('vocab_mapping', get_vocab())
+    kruntime.set('phonemizers_initialized', True)
+
+    info_log(f"Initialized {len(phonemizers)} phonemizers: {list(phonemizers.keys())}")
+    return phonemizers
+
 
 def tokenize(ps):
-    """Convert phoneme string to token IDs"""
-    return [i for i in map(VOCAB.get, ps) if i is not None]
+    """
+    Purpose: Convert phoneme string to token IDs using cached vocabulary
+    Pre: Phoneme string provided, vocabulary initialized
+    Post: Phoneme string converted to numerical tokens
+    Args: ps (str) - Phoneme string to tokenize
+    Returns: list - List of token IDs corresponding to phonemes
+    """
+    # Get vocabulary from runtime, initialize if needed
+    vocab = kruntime.get('vocab_mapping', None)
+    if not vocab:
+        vocab = get_vocab()
+        kruntime.set('vocab_mapping', vocab)
 
+    return [i for i in map(vocab.get, ps) if i is not None]
 
-# Initialize phonemizers with graceful fallback
-phonemizers = {}
-
-# Always try to load English (required)
-try:
-    phonemizers['a'] = phonemizer.backend.EspeakBackend(language='en-us', preserve_punctuation=True, with_stress=True)
-    log("Loaded en-us phonemizer")
-except Exception as e:
-    log(f"Failed to load en-us phonemizer: {e}")
-
-try:
-    phonemizers['b'] = phonemizer.backend.EspeakBackend(language='en-gb', preserve_punctuation=True, with_stress=True)
-    log("Loaded en-gb phonemizer")
-except Exception as e:
-    log(f"Failed to load en-gb phonemizer: {e}")
-
-# Optional language phonemizers (fail gracefully if not available)
-optional_langs = [
-    ('f', 'fr', 'French'),
-    ('i', 'it', 'Italian'),
-    ('j', 'ja', 'Japanese'),
-    ('p', 'pt', 'Portuguese'),
-    ('z', 'zh', 'Chinese'),
-    ('h', 'hi', 'Hindi')
-]
-
-for code, lang, name in optional_langs:
-    try:
-        phonemizers[code] = phonemizer.backend.EspeakBackend(language=lang, preserve_punctuation=True, with_stress=True)
-        log(f"Loaded {name} phonemizer")
-    except Exception as e:
-        log(f"Skipped {name} phonemizer (not installed): {e}")
-
-log(f"Initialized {len(phonemizers)} phonemizers: {list(phonemizers.keys())}")
 
 def phonemize(text, lang, norm=True):
-    """Convert text to phonemes"""
+    """
+    Purpose: Convert text to phonemes using appropriate language backend
+    Pre: Text provided, phonemizers initialized, valid language code
+    Post: Text converted to phoneme representation
+    Args: text (str) - Text to phonemize
+          lang (str) - Language code (e.g., 'a' for en-us, 'b' for en-gb)
+          norm (bool) - Whether to normalize text before phonemization
+    Returns: str - Phonemized text string
+    """
+    # Ensure phonemizers are initialized
+    phonemizers = initialize_phonemizers()
+
+    debug_log(f"Available phonemizers: {list(phonemizers.keys()) if phonemizers else 'None'}")
+    debug_log(f"Requested lang: {lang}")
+
+    # Check if language is available
+    if lang not in phonemizers:
+        error_log(f"Language {lang} not available, falling back to 'a' (en-us)")
+        lang = 'a' if 'a' in phonemizers else list(phonemizers.keys())[0]
+
+    if not phonemizers:
+        error_log("No phonemizers available!")
+        return ""
+
+    # Normalize text if requested
     if norm:
         text = normalize_text(text)
-    ps = phonemizers[lang].phonemize([text])
-    ps = ps[0] if ps else ''
-    # https://en.wiktionary.org/wiki/kokoro#English
-    ps = ps.replace('kəkˈoːɹoʊ', 'kˈoʊkəɹoʊ').replace('kəkˈɔːɹəʊ', 'kˈəʊkəɹəʊ')
-    ps = ps.replace('ʲ', 'j').replace('r', 'ɹ').replace('x', 'k').replace('ɬ', 'l')
-    ps = re.sub(r'(?<=[a-zɹˌ])(?=hˈʌndɹɪd)', ' ', ps)
-    ps = re.sub(r' z(?=[;:,.!?¡¿—…"«»"" ]|$)', 'z', ps)
-    if lang == 'a':
-        ps = re.sub(r'(?<=nˈaɪn)ti(?!ˌ)', 'di', ps)
-    ps = ''.join(filter(lambda p: p in VOCAB, ps))
-    return ps.strip()
 
-# In process_text_for_onnx(), add more detailed debugging:
+    try:
+        ps = phonemizers[lang].phonemize([text])
+        ps = ps[0] if ps else ''
+
+        # Kokoro-specific phoneme corrections
+        # https://en.wiktionary.org/wiki/kokoro#English
+        ps = ps.replace('kəkˈoːɹoʊ', 'kˈoʊkəɹoʊ').replace('kəkˈɔːɹəʊ', 'kˈəʊkəɹəʊ')
+        ps = ps.replace('ʲ', 'j').replace('r', 'ɹ').replace('x', 'k').replace('ɬ', 'l')
+        ps = re.sub(r'(?<=[a-zɹˌ])(?=hˈʌndɹɪd)', ' ', ps)
+        ps = re.sub(r' z(?=[;:,.!?¡¿—…"«»"" ]|$)', 'z', ps)
+
+        # American English specific corrections
+        if lang == 'a':
+            ps = re.sub(r'(?<=nˈaɪn)ti(?!ˌ)', 'di', ps)
+
+        # Filter out characters not in vocabulary
+        vocab = kruntime.get('vocab_mapping', get_vocab())
+        ps = ''.join(filter(lambda p: p in vocab, ps))
+
+        return ps.strip()
+
+    except Exception as e:
+        error_log(f"Error in phonemization: {e}")
+        return ""
+
+
 def process_text_for_onnx(text, lang='a'):
     """
-    Complete text processing pipeline for ONNX:
-    text -> normalized -> phonemes -> tokens
+    Purpose: Complete text processing pipeline for ONNX TTS system
+    Pre: Text provided, phonemizers and vocabulary available
+    Post: Text converted through normalization -> phonemes -> tokens
+    Args: text (str) - Input text to process
+          lang (str) - Language code for phonemization
+    Returns: tuple - (tokens, phonemes, normalized_text)
     """
     try:
         # Check for pronunciation language override from settings
-        try:
-            from modules import shared
-            pronunciation_lang = getattr(shared.args, 'kokoro_language', 'en-us')
+        pronunciation_lang = ksettings.get('language', None)
+        if pronunciation_lang:
             # Convert language code to phonemizer language
             lang_map = {
                 'en-us': 'a', 'en-gb': 'b', 'fr-fr': 'f', 'it': 'i',
                 'ja': 'j', 'pt': 'p', 'zh': 'z', 'hi': 'h'
             }
             lang = lang_map.get(pronunciation_lang, lang)
-            log(f"Using pronunciation language: {pronunciation_lang} -> {lang}")
-        except (ImportError, AttributeError):
-            log(f"Using default language: {lang}")
+            debug_log(f"Using pronunciation language: {pronunciation_lang} -> {lang}")
+        else:
+            debug_log(f"Using default language: {lang}")
 
         # Normalize text
         normalized = normalize_text(text)
-        log(f"Normalized: '{normalized}'")
+        debug_log(f"Normalized: '{normalized}'")
 
         # Convert to phonemes
         phonemes = phonemize(normalized, lang=lang, norm=False)
-        log(f"Phonemes: '{phonemes}'")
+        debug_log(f"Phonemes: '{phonemes}'")
 
         # Convert to tokens
         tokens = tokenize(phonemes)
-        log(f"Tokens ({len(tokens)}): {tokens}")
+        debug_log(f"Tokens ({len(tokens)}): {tokens}")
 
         # Ensure within token limit
         if len(tokens) > 510:
@@ -207,7 +358,14 @@ def process_text_for_onnx(text, lang='a'):
         return tokens, phonemes, normalized
 
     except Exception as e:
-        log(f"Error in text processing: {e}")
+        error_log(f"Error in text processing: {e}")
         # Fallback: simple character tokenization
         simple_tokens = [ord(c) % 178 for c in text[:510]]
         return simple_tokens, text, text
+
+
+# Initialize phoneme system
+try:
+    info_log("Phoneme module loaded - phonemizers will initialize on first use")
+except Exception as e:
+    error_log(f"Phoneme module initialization deferred: {e}")
